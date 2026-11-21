@@ -56,6 +56,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Chat with a model on another laptop.")
     parser.add_argument("--peer", required=True, help="other laptop's IP, e.g. 192.168.1.42")
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--prompt", help="ask one question, print the answer, and exit")
     args = parser.parse_args()
 
     client = PeerClient(args.peer)
@@ -70,6 +71,18 @@ def main() -> None:
     print(f"Connected to '{name}' at {client.base}" + ("  [FAKE model mode]" if info.get("fake") else ""))
     print(f"Models shared: {', '.join(info['models']) or '(none - they need to `ollama pull` one)'}")
     model = args.model if args.model in info["models"] or not info["models"] else info["models"][0]
+    if args.prompt:
+        print(f"Using model: {model}\n\nyou> {args.prompt}")
+        print(f"{name}> ", end="", flush=True)
+        try:
+            for piece in client.chat(model, [{"role": "user", "content": args.prompt}]):
+                if isinstance(piece, dict):
+                    print(f"\n   ({piece['seconds']}s on {piece['node']})")
+                else:
+                    print(piece, end="", flush=True)
+        except (RuntimeError, urllib.error.URLError, OSError) as e:
+            print(f"\n[error] {e}")
+        return
     print(f"Using model: {model}. Type /quit to exit.\n")
 
     history: list[dict] = []

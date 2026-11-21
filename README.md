@@ -19,6 +19,25 @@ Both laptops can run **both** pieces at the same time, so each can use the other
 
 ---
 
+## Easiest: use the window (GUI)
+
+```bash
+python3 -m peer.gui
+```
+
+- **Top toggle:** *Ask* (send prompts) or *Host* (share my model). Hosting keeps running
+  while you switch to Ask, so one laptop can do both.
+- **Room:** type your team's room (or press *New room*). It's remembered.
+- **Host:** enter your name, press *Start hosting*.
+- **Ask:** choose *Split across all laptops* or *Just one laptop* (press *Find laptops* to fill
+  the list), type a prompt at the bottom and press **Send** (or Ctrl+Enter).
+
+The window just runs the same commands described below; it shows each one in blue
+(`$ python -m ...`), so you can copy it into a terminal. Settings are saved in `gui_settings.json`.
+
+> Mac: if you get `No module named 'tkinter'`, install Python from python.org
+> (Homebrew users: `brew install python-tk`).
+
 ## 1. One-time setup (on EVERY laptop)
 
 1. **Install Python 3.11 or newer** from <https://www.python.org/downloads/>.
@@ -185,6 +204,7 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `peer/server.py` | Receives chat requests from other laptops and passes them to local Ollama |
 | `peer/chat.py` | Interactive chat client you run to talk to another laptop |
 | `peer/split.py` | Splits one prompt into parts, runs them on all laptops at once, then collects and saves the answers |
+| `peer/gui.py` | The window: builds and runs the commands below for you, remembers settings |
 | `peer/room.py` | Rooms: posts/reads laptop addresses on ntfy.sh so peers find each other |
 | `peer/discovery.py` | Finds other laptops on the Wi-Fi (UDP broadcast on port 8766) |
 | `peer/ollama.py` | Talks to the Ollama on this laptop |

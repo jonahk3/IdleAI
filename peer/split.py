@@ -233,12 +233,21 @@ def main() -> None:
     parser.add_argument("--fake", action="store_true", help="this laptop pretends to have a model (testing)")
     parser.add_argument("--forget", action="store_true", help="forget saved laptops (known_peers.json)")
     parser.add_argument("--room", help="room name to find laptops in (remembered)")
+    parser.add_argument("--list", action="store_true", help="just list the laptops that can be used, then exit")
     args = parser.parse_args()
     room = resolve_room(args.room)
 
     if args.forget:
         Path(KNOWN_PEERS_FILE).unlink(missing_ok=True)
         log("Forgot saved laptops.")
+    if args.list:
+        devices = find_devices(args.model, args.peers, not args.no_discover, True, room)[1:]
+        log(f"{len(devices)} other laptop(s) ready:")
+        for d in devices:
+            log(f"  - {d.name} ({d.where})")
+        # One machine-readable line, used by the GUI to fill its peer list.
+        print("PEERS_JSON " + json.dumps([{"name": d.name, "address": d.where} for d in devices]), flush=True)
+        return
     prompt = args.prompt or input("Prompt: ").strip()
     if not prompt:
         return

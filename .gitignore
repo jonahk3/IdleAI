@@ -8,3 +8,4 @@ worker/config.json
 results/
 known_peers.json
 room.txt
+gui_settings.json
