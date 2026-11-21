@@ -11,12 +11,13 @@ treated as plain text data (nothing from the network is ever executed).
 import argparse
 import json
 import socket
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from peer.config import MODEL_ALLOWLIST, PEER_PORT
 from peer.discovery import local_ip, start_responder
-from peer.ollama import chat_stream, installed_models
+from peer.ollama import chat_stream, installed_models, warm_up
 from peer.room import resolve_room, start_announcer
 
 ALLOWED_ROLES = {"system", "user", "assistant"}
@@ -143,6 +144,7 @@ def main() -> None:
             log(f"  Is Ollama running? Try:  ollama pull {MODEL_ALLOWLIST[0]}")
         else:
             log(f"Ollama OK. Sharing models: {', '.join(models)}")
+            threading.Thread(target=warm_up, args=(models[0],), daemon=True).start()
 
     server = ThreadingHTTPServer(("0.0.0.0", args.port), PeerHandler)
     if not start_responder(args.name, args.port):

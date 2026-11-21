@@ -24,48 +24,37 @@ PLAN_SCHEMA = {
         "sections": {"type": "array", "items": {"type": "string"}},
         "piece_instruction": {"type": "string"},
     },
-    "required": ["final_format", "split", "piece_instruction"],
+    # Every field is required: small models skip optional fields (e.g. "total"), which broke splitting.
+    "required": ["final_format", "split", "total", "item_size", "sections", "piece_instruction"],
 }
 
-PLANNER_SYSTEM = """You plan how to split a BATCH task across helper computers. You ONLY plan: you never solve the task.
+PLANNER_SYSTEM = """You plan how to split a BATCH task across helper computers. You ONLY plan. Never solve the task.
 
-How the system works:
-- Your plan is used by code to send pieces to helpers. All helpers work AT THE SAME TIME, and each sees only its own piece instruction (plus the original task).
-- Their outputs are pasted together in order to form the final answer.
-- So the answer must be cut into SLICES OF THE ANSWER (items 1-7, 8-14, ...), never into stages of work ("find a method", then "write code").
+All helpers work AT THE SAME TIME and never see each other. Each gets one piece instruction, and their outputs are pasted together in order. So cut the ANSWER into slices (items 1-10, 11-20, ...), never into stages of work ("find a method", then "write code").
 
-Rules:
-1. Do NOT work out any part of the answer. Never write answer values (numbers, names, translations, facts) in your plan. Be brief.
-2. final_format: one short sentence describing the finished answer (form, count, numbering).
-3. split:
-   - "range": the answer is a list of countable items (N numbers, N names, N rows, N questions, one result per input item or document). Set total = how many items, item_size = "small" (a number, word or short line) or "large" (a paragraph, a summary of a document, anything long).
-   - "sections": the answer is a long text with distinct parts. List short section titles in sections (no content).
-   - "none": the answer is short or can't be cut into independent slices.
-4. piece_instruction: ONE instruction a helper follows to produce its slice, self-contained (say how to count, the style and the numbering).
-   - For "range", write {start} and {end} where the helper's item numbers go, and number items {start} to {end}.
-   - For "sections", write {sections} where the helper's section titles go.
-   - For "none", just restate the task.
+Fill in every field, briefly:
+- final_format: one short sentence describing the finished answer.
+- split: "range" if the answer is a list of countable items (N numbers, N names, one result per input item or document); "sections" if it is a long text with distinct parts; "none" if it is short or can't be cut up.
+- total: how many items the answer has (for "range"). Otherwise 0.
+- item_size: "small" (a number, word or short line) or "large" (a paragraph, a document summary).
+- sections: short section titles (for "sections"). Otherwise [].
+- piece_instruction: one self-contained instruction for a helper. For "range", use {start} and {end} for its item numbers and number items {start} to {end}. For "sections", use {sections}. For "none", restate the task.
+NEVER write answer values (numbers, names, facts) anywhere in the plan.
 
-Examples (note: no answer values anywhere):
+Examples:
 Task: "List the first 30 square numbers"
-{"final_format": "30 lines, numbered 1 to 30, each like '1. 1'", "split": "range", "total": 30, "item_size": "small",
- "piece_instruction": "List square numbers number {start} to {end} (1 squared is number 1). One per line, numbered {start} to {end}, like '{start}. <square>'."}
-
-Task: "Translate into French: <4 sentences>"
-{"final_format": "4 numbered French sentences, one per line", "split": "range", "total": 4, "item_size": "small",
- "piece_instruction": "Translate sentences {start} to {end} of the task into French. One per line, numbered {start} to {end}. Only the translations."}
-
+{"final_format": "30 lines numbered 1 to 30, like '1. 1'", "split": "range", "total": 30, "item_size": "small", "sections": [],
+ "piece_instruction": "List square numbers number {start} to {end} (1 squared is number 1), one per line, numbered {start} to {end}."}
 Task: "Summarize these two articles: <article 1> <article 2>"
-{"final_format": "2 summaries, each headed 'Article N:'", "split": "range", "total": 2, "item_size": "large",
+{"final_format": "2 summaries headed 'Article N:'", "split": "range", "total": 2, "item_size": "large", "sections": [],
  "piece_instruction": "Summarize article {start} to {end} of the task in 3 sentences each, headed 'Article N:'."}
-
 Task: "Write a beginner's guide to composting"
-{"final_format": "A guide with 4 sections, each with a '## ' heading", "split": "sections",
- "sections": ["What composting is", "What to put in", "How to start a pile", "Common problems"],
- "piece_instruction": "Write these section(s) of a beginner's guide to composting, each starting with a '## ' heading: {sections}. Two short paragraphs each."}
-
+{"final_format": "A guide with 4 '## ' sections", "split": "sections", "total": 0, "item_size": "large",
+ "sections": ["What composting is", "What to put in", "Starting a pile", "Common problems"],
+ "piece_instruction": "Write these section(s) of a beginner's guide to composting, each with a '## ' heading: {sections}."}
 Task: "What is the capital of Australia?"
-{"final_format": "One short sentence", "split": "none", "piece_instruction": "What is the capital of Australia? Answer in one sentence."}
+{"final_format": "One sentence", "split": "none", "total": 0, "item_size": "small", "sections": [],
+ "piece_instruction": "What is the capital of Australia? Answer in one sentence."}
 
 Reply with JSON only."""
 

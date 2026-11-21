@@ -15,6 +15,8 @@ What happens (the prompts for each step live in peer/prompts.py):
 """
 import argparse
 import json
+import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -175,6 +177,21 @@ def fill_range(template: str, start: int, end: int) -> str:
     return template.replace("{start}", str(start)).replace("{end}", str(end))
 
 
+def infer_total(value, *texts: str) -> int:
+    """The planner's item count, or (if it left it out) the first count in the format/task text."""
+    try:
+        total = int(value or 0)
+    except (TypeError, ValueError):
+        total = 0
+    if total >= 2:
+        return total
+    for text in texts:  # "30 numbers, numbered 1 to 30" / "Give me the first 30 prime numbers"
+        for number in re.findall(r"\b(\d{1,5})\b", text):
+            if 2 <= int(number) <= 10000:
+                return int(number)
+    return total
+
+
 def whole_task(task: str, final_format: str, reason: str) -> Plan:
     return Plan(final_format, False, [{"instruction": task, "expected_output": final_format}], reason=reason)
 
@@ -192,15 +209,13 @@ def plan(local: LocalDevice, model: str, task: str, available: int) -> Plan:
                            prompts.PLAN_SCHEMA, PLANNER_MAX_TOKENS)
         except (ValueError, KeyError, TypeError) as e:
             return whole_task(task, "Whatever best answers the task.", f"planner reply unusable ({e})")
+    log("  recipe: " + json.dumps(raw, ensure_ascii=False))
     final_format = str(raw.get("final_format", "")).strip() or "Whatever best answers the task."
     template = str(raw.get("piece_instruction", "")).strip()
     split = raw.get("split")
 
     if split == "range" and template:
-        try:
-            total = int(raw.get("total") or 0)
-        except (TypeError, ValueError):
-            total = 0
+        total = infer_total(raw.get("total"), final_format, task)
         size = "large" if raw.get("item_size") == "large" else "small"
         laptops = useful_laptops(total, size, available)
         if total >= 2 and laptops > 1:
@@ -354,6 +369,8 @@ def main() -> None:
         return
 
     t0 = time.time()
+    if not args.fake:  # load the model into memory while we look for laptops
+        threading.Thread(target=ollama.warm_up, args=(args.model,), daemon=True).start()
     devices = find_devices(args.model, args.peers, not args.no_discover, args.fake, room)
     log(f"{len(devices)} device(s) available:")
     for d in devices:
