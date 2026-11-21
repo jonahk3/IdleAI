@@ -22,7 +22,24 @@ from pathlib import Path
 from peer.config import ROOM_ANNOUNCE_EVERY, ROOM_FILE, ROOM_SERVICE_URL
 from peer.discovery import local_ip
 
-ROOM_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+ROOM_PATTERN = re.compile(r"^[a-z0-9_-]{8,64}$")
+
+# Short, common, easy-to-spell words for room names like "maple-otter-river-42".
+WORDS = """
+apple arrow aspen badge baker beach berry birch black blaze bloom board brave brick
+brook brush cabin camel candy canoe cedar chalk charm chess chief cider cliff cloud
+clover coast cobra comet coral crane creek crown daisy dance delta denim diner drift
+eagle earth ember fable fairy falcon fern field flame flint flute forest frost fruit
+garden ghost giant ginger glade globe grape grass gravel harbor hazel heron honey
+horse igloo iris island ivory jacket jade jelly jewel jolly kayak kettle kiwi koala
+lake lemon lilac lime linen lion lotus lucky lunar mango maple marble meadow melon
+mint moose mossy north oasis ocean olive onion orbit otter owl panda paper
+peach pearl pepper piano pilot pine pixel planet plum polar pond poppy prairie
+puffin quartz quail rabbit radar raven reef river robin rocket rose ruby saddle
+salmon sand satin shell silver sky slate snow solar spark spruce squid star stone
+storm sugar summit sunny swan tango teal thunder tiger toast topaz tulip tundra
+turtle velvet violet walnut water whale willow window winter wolf yarrow zebra
+""".split()
 
 
 def log(msg: str) -> None:
@@ -30,17 +47,29 @@ def log(msg: str) -> None:
 
 
 # ---------------------------------------------------------------- room name
+def normalize_room(text: str) -> str:
+    """Be forgiving when typing: "Maple Otter River 42" -> "maple-otter-river-42"."""
+    return "-".join(text.strip().lower().replace("_", "-").split()).replace("--", "-")
+
+
+def new_room_name() -> str:
+    words = [secrets.choice(WORDS) for _ in range(3)]
+    return "-".join(words) + f"-{secrets.randbelow(90) + 10}"
+
+
 def resolve_room(cli_value: str | None) -> str | None:
     """Room from --room (and remember it), else the one saved in room.txt."""
     if cli_value:
+        cli_value = normalize_room(cli_value)
         if not ROOM_PATTERN.match(cli_value):
-            raise SystemExit("Room names must be 8-64 letters, numbers, - or _ (try: python -m peer.room)")
+            raise SystemExit("Room names must be 8-64 letters, numbers or dashes (try: python -m peer.room)")
         Path(ROOM_FILE).write_text(cli_value + "\n")
         return cli_value
     try:
         saved = Path(ROOM_FILE).read_text().strip()
     except OSError:
         return None
+    saved = normalize_room(saved)
     return saved if ROOM_PATTERN.match(saved) else None
 
 
@@ -109,7 +138,7 @@ def lookup(room: str) -> list[dict]:
 
 
 def main() -> None:
-    room = "idle-" + secrets.token_hex(6)
+    room = new_room_name()
     Path(ROOM_FILE).write_text(room + "\n")
     print(f"New room: {room}")
     print(f"Saved to {ROOM_FILE}. Send this name privately to your teammates (not in the public repo!).")
