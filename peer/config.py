@@ -1,4 +1,5 @@
 """Settings shared by the peer server and the chat client."""
+import os
 
 # Port the peer server listens on (other laptops connect to this).
 PEER_PORT = 8765
@@ -27,3 +28,9 @@ RESULTS_DIR = "results"
 
 # peer.split remembers laptops that worked here, and tries them again next time.
 KNOWN_PEERS_FILE = "known_peers.json"
+
+# "Room" meeting point: laptops post their address here so peers can find them
+# on networks that block discovery (e.g. university Wi-Fi). Free, no account.
+ROOM_SERVICE_URL = os.environ.get("IDLE_ROOM_SERVICE", "https://ntfy.sh")
+ROOM_FILE = "room.txt"          # your room name is remembered here (never commit it)
+ROOM_ANNOUNCE_EVERY = 60 * 60   # re-post our address at least this often (seconds)

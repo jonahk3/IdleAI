@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from peer.config import MODEL_ALLOWLIST, PEER_PORT
 from peer.discovery import local_ip, start_responder
 from peer.ollama import chat_stream, installed_models
+from peer.room import resolve_room, start_announcer
 
 ALLOWED_ROLES = {"system", "user", "assistant"}
 MAX_MESSAGES = 100
@@ -128,7 +129,9 @@ def main() -> None:
     parser.add_argument("--name", default=socket.gethostname(), help="friendly name shown to peers")
     parser.add_argument("--port", type=int, default=PEER_PORT)
     parser.add_argument("--fake", action="store_true", help="no Ollama: reply with a fake echo model")
+    parser.add_argument("--room", help="room name to post this laptop's address in (remembered)")
     args = parser.parse_args()
+    room = resolve_room(args.room)
 
     PeerHandler.node_name = args.name
     PeerHandler.fake = args.fake
@@ -145,6 +148,10 @@ def main() -> None:
     if not start_responder(args.name, args.port):
         log("WARNING: discovery port busy, so peer.split can't auto-find this laptop (use --peers).")
     log(f"Peer '{args.name}' is up.")
+    if room:
+        start_announcer(room, args.name, args.port)
+    else:
+        log("No room set, so teammates need your IP. (Make one with: python -m peer.room)")
     log(f"Tell your teammate to run:  python -m peer.chat --peer {local_ip()}")
     log("Press Ctrl+C to stop.")
     try:

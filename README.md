@@ -117,6 +117,33 @@ Options:
 
 The laptop running `peer.split` needs Ollama + the model too, because it does the planning.
 
+## 5. Rooms: find each other without typing IPs (university Wi-Fi)
+
+University Wi-Fi blocks the automatic search. Instead, every laptop posts its address to a
+shared **room** on [ntfy.sh](https://ntfy.sh) (a free public message board, no account), and
+`peer.split` reads the room.
+
+1. **One person** makes a room (a random name), and sends it to the team **privately**
+   (group chat, *not* the public repo, since anyone with the name can read and post):
+   ```bash
+   python3 -m peer.room
+   ```
+2. **Every helper laptop** starts its server with the room:
+   ```bash
+   python3 -m peer.server --name bob --room idle-1a2b3c4d5e6f
+   ```
+   It should print `Posted to room ...: bob is at 10.x.x.x:8765`.
+3. **The asking laptop** runs split with the room:
+   ```bash
+   python3 -m peer.split "your prompt" --room idle-1a2b3c4d5e6f
+   ```
+
+The room name is saved in `room.txt`, so after the first time you can leave out `--room`.
+Servers re-post their address automatically if it changes. Give each laptop a different `--name`.
+
+Safety: only private network addresses (like `10.x`) from the room are used, so someone
+who learns the room name can't redirect your prompts to a server on the internet.
+
 ## Testing without Ollama
 
 To check the network connection before Ollama is installed, run the server with a fake
@@ -137,6 +164,8 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `Models shared: (none ...)` | Ollama isn't running on the server laptop, or the model isn't downloaded yet. Run `ollama pull llama3.2:3b` there. |
 | `model '...' is not allowed` | Only models in `peer/config.py` → `MODEL_ALLOWLIST` can run. |
 | `peer.split` only finds "this laptop" | Auto-find only checks addresses that share your first three numbers (e.g. `10.0.3.x`). Big networks put laptops on different ones. Run once with `--peers <their IP>` and it's remembered. |
+| `Couldn't read/post to room` | The laptop can't reach ntfy.sh (no internet, or the Wi-Fi login page isn't done). Open a browser to check. Remembered laptops and `--peers` still work. |
+| Room lists a laptop but it's skipped | Its server stopped, or its address changed and it hasn't re-posted yet (it checks every 30 s). |
 | Wrong IP printed | Find it yourself. Mac: `ipconfig getifaddr en0`. Windows: `ipconfig`, then look for "IPv4 Address". |
 
 ## Safety
@@ -156,6 +185,7 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `peer/server.py` | Receives chat requests from other laptops and passes them to local Ollama |
 | `peer/chat.py` | Interactive chat client you run to talk to another laptop |
 | `peer/split.py` | Splits one prompt into parts, runs them on all laptops at once, then collects and saves the answers |
+| `peer/room.py` | Rooms: posts/reads laptop addresses on ntfy.sh so peers find each other |
 | `peer/discovery.py` | Finds other laptops on the Wi-Fi (UDP broadcast on port 8766) |
 | `peer/ollama.py` | Talks to the Ollama on this laptop |
 

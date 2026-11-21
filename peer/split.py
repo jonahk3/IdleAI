@@ -21,6 +21,7 @@ from peer import ollama
 from peer.chat import PeerClient
 from peer.config import DEFAULT_MODEL, KNOWN_PEERS_FILE, PEER_PORT, RESULTS_DIR
 from peer.discovery import discover, local_ip
+from peer.room import lookup, resolve_room
 
 
 def log(msg: str) -> None:
@@ -81,7 +82,8 @@ def check_peer(host: str, port: int) -> dict | Exception:
         return e
 
 
-def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake: bool) -> list[Device]:
+def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake: bool,
+                 room: str | None = None) -> list[Device]:
     devices: list[Device] = [LocalDevice(fake)]
     candidates: list[tuple[str, int]] = []
     for p in manual_peers:
@@ -91,9 +93,13 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
     if known:
         log(f"Trying {len(known)} laptop(s) that worked before ({KNOWN_PEERS_FILE})")
         candidates += known
-    if use_discovery:
+    me = {local_ip(), "127.0.0.1"}
+    if room:
+        listed = [d for d in lookup(room) if d["ip"] not in me]
+        log(f"Room '{room}': {len(listed)} other laptop(s) listed")
+        candidates += [(d["ip"], d["port"]) for d in listed]
+    if use_discovery and not candidates:
         log("Looking for other laptops on the Wi-Fi...")
-        me = {local_ip(), "127.0.0.1"}
         candidates += [(d["ip"], d["port"]) for d in discover() if d["ip"] not in me]
 
     candidates = list(dict.fromkeys(candidates))  # remove duplicates, keep order
@@ -226,7 +232,9 @@ def main() -> None:
     parser.add_argument("--merge", action="store_true", help="have this laptop rewrite the parts into one answer")
     parser.add_argument("--fake", action="store_true", help="this laptop pretends to have a model (testing)")
     parser.add_argument("--forget", action="store_true", help="forget saved laptops (known_peers.json)")
+    parser.add_argument("--room", help="room name to find laptops in (remembered)")
     args = parser.parse_args()
+    room = resolve_room(args.room)
 
     if args.forget:
         Path(KNOWN_PEERS_FILE).unlink(missing_ok=True)
@@ -240,7 +248,7 @@ def main() -> None:
         return
 
     t0 = time.time()
-    devices = find_devices(args.model, args.peers, not args.no_discover, args.fake)
+    devices = find_devices(args.model, args.peers, not args.no_discover, args.fake, room)
     log(f"{len(devices)} device(s) available:")
     for d in devices:
         log(f"  - {d.name} ({d.where})")
