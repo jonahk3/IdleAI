@@ -85,6 +85,9 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
             log(f"  skip '{info['name']}' at {host}:{port} (doesn't have {model})")
             continue
         devices.append(RemoteDevice(info["name"], host, port))
+    if len(devices) == 1:
+        log("No other laptops found. Check that `python -m peer.server` is running on them,")
+        log("you're on the same Wi-Fi, and try `--peers <IP>` using the IP their server printed.")
     return devices
 
 

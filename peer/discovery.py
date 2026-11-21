@@ -7,8 +7,10 @@ import json
 import socket
 import threading
 import time
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
-from peer.config import DISCOVERY_PORT
+from peer.config import DISCOVERY_PORT, PEER_PORT
 
 DISCOVER_MSG = b"IDLE_DISCOVER_V1"
 
@@ -46,6 +48,14 @@ def start_responder(name: str, http_port: int) -> bool:
 
 
 def discover(timeout: float = 1.5) -> list[dict]:
+    """Find peer servers: try a broadcast first, then knock on every address."""
+    found = discover_broadcast(timeout)
+    if not found:
+        found = scan_subnet()
+    return found
+
+
+def discover_broadcast(timeout: float = 1.5) -> list[dict]:
     """Return [{"ip", "port", "name"}, ...] for every peer server that answered."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -73,3 +83,29 @@ def discover(timeout: float = 1.5) -> list[dict]:
             continue
     sock.close()
     return list(found.values())
+
+
+def _probe(ip: str, port: int) -> dict | None:
+    try:
+        with urllib.request.urlopen(f"http://{ip}:{port}/info", timeout=0.8) as resp:
+            info = json.load(resp)
+        return {"ip": ip, "port": port, "name": str(info["name"])}
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def scan_subnet(port: int = PEER_PORT) -> list[dict]:
+    """Fallback for Wi-Fi that blocks broadcasts: try every address x.y.z.1 to x.y.z.254.
+
+    This uses a normal connection (like peer.chat), so it works wherever chat works.
+    Takes a few seconds.
+    """
+    ip = local_ip()
+    if ip == "127.0.0.1":
+        return []
+    prefix = ip.rsplit(".", 1)[0]
+    print(f"  (no reply to broadcast; checking every address on {prefix}.x - takes a few seconds)", flush=True)
+    addresses = [f"{prefix}.{i}" for i in range(1, 255) if f"{prefix}.{i}" != ip]
+    with ThreadPoolExecutor(max_workers=64) as pool:
+        results = pool.map(lambda a: _probe(a, port), addresses)
+    return [r for r in results if r]
