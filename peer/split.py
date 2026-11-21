@@ -19,7 +19,7 @@ from pathlib import Path
 
 from peer import ollama
 from peer.chat import PeerClient
-from peer.config import DEFAULT_MODEL, PEER_PORT, RESULTS_DIR
+from peer.config import DEFAULT_MODEL, KNOWN_PEERS_FILE, PEER_PORT, RESULTS_DIR
 from peer.discovery import discover, local_ip
 
 
@@ -60,31 +60,58 @@ class RemoteDevice(Device):
         return "".join(p for p in self.client.chat(model, messages) if isinstance(p, str))
 
 
+def load_known_peers() -> list[tuple[str, int]]:
+    """Laptops that worked before (saved in known_peers.json)."""
+    try:
+        data = json.loads(Path(KNOWN_PEERS_FILE).read_text())
+        return [(str(d["ip"]), int(d["port"])) for d in data]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+
+
+def save_known_peers(peers: list[tuple[str, int]]) -> None:
+    unique = list(dict.fromkeys(load_known_peers() + peers))
+    Path(KNOWN_PEERS_FILE).write_text(json.dumps([{"ip": h, "port": p} for h, p in unique], indent=2))
+
+
+def check_peer(host: str, port: int) -> dict | Exception:
+    try:
+        return PeerClient(host, port).info(timeout=3)
+    except OSError as e:
+        return e
+
+
 def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake: bool) -> list[Device]:
     devices: list[Device] = [LocalDevice(fake)]
     candidates: list[tuple[str, int]] = []
     for p in manual_peers:
         host, _, port = p.partition(":")
         candidates.append((host, int(port or PEER_PORT)))
+    known = load_known_peers()
+    if known:
+        log(f"Trying {len(known)} laptop(s) that worked before ({KNOWN_PEERS_FILE})")
+        candidates += known
     if use_discovery:
         log("Looking for other laptops on the Wi-Fi...")
         me = {local_ip(), "127.0.0.1"}
         candidates += [(d["ip"], d["port"]) for d in discover() if d["ip"] not in me]
 
-    seen = set()
-    for host, port in candidates:
-        if (host, port) in seen:
-            continue
-        seen.add((host, port))
-        try:
-            info = PeerClient(host, port).info()
-        except OSError as e:
-            log(f"  skip {host}:{port} (not reachable: {e})")
+    candidates = list(dict.fromkeys(candidates))  # remove duplicates, keep order
+    with ThreadPoolExecutor(max_workers=max(1, len(candidates))) as pool:
+        answers = list(pool.map(lambda c: check_peer(*c), candidates))
+
+    working: list[tuple[str, int]] = []
+    for (host, port), info in zip(candidates, answers):
+        if isinstance(info, Exception):
+            log(f"  skip {host}:{port} (not reachable: {info})")
             continue
         if model not in info["models"]:
             log(f"  skip '{info['name']}' at {host}:{port} (doesn't have {model})")
             continue
         devices.append(RemoteDevice(info["name"], host, port))
+        working.append((host, port))
+    if working:
+        save_known_peers(working)
     if len(devices) == 1:
         log("No other laptops found. Check that `python -m peer.server` is running on them,")
         log("you're on the same Wi-Fi, and try `--peers <IP>` using the IP their server printed.")
@@ -198,8 +225,12 @@ def main() -> None:
     parser.add_argument("--no-discover", action="store_true", help="only use --peers, don't search the Wi-Fi")
     parser.add_argument("--merge", action="store_true", help="have this laptop rewrite the parts into one answer")
     parser.add_argument("--fake", action="store_true", help="this laptop pretends to have a model (testing)")
+    parser.add_argument("--forget", action="store_true", help="forget saved laptops (known_peers.json)")
     args = parser.parse_args()
 
+    if args.forget:
+        Path(KNOWN_PEERS_FILE).unlink(missing_ok=True)
+        log("Forgot saved laptops.")
     prompt = args.prompt or input("Prompt: ").strip()
     if not prompt:
         return

@@ -23,8 +23,8 @@ class PeerClient:
             port = int(port_str)
         self.base = f"http://{host}:{port}"
 
-    def info(self) -> dict:
-        with urllib.request.urlopen(f"{self.base}/info", timeout=5) as resp:
+    def info(self, timeout: float = 5) -> dict:
+        with urllib.request.urlopen(f"{self.base}/info", timeout=timeout) as resp:
             return json.load(resp)
 
     def chat(self, model: str, messages: list[dict]):

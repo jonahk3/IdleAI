@@ -109,8 +109,10 @@ What happens:
 
 Options:
 - `--merge`: after collecting, your laptop rewrites the parts into one smooth answer.
-- `--peers 192.168.1.42 192.168.1.57`: add laptops by IP, if auto-find doesn't work
-  (some Wi-Fi blocks broadcasts). Add `--no-discover` to use only these.
+- `--peers 192.168.1.42 192.168.1.57`: add laptops by IP (the IP their server printed), if
+  auto-find doesn't work. Laptops that connect are **remembered** in `known_peers.json` and
+  tried automatically next time, so you only need `--peers` once. `--forget` clears the list.
+- `--no-discover`: don't search the Wi-Fi; only use `--peers` and remembered laptops.
 - Leave out the prompt and it will ask you for one.
 
 The laptop running `peer.split` needs Ollama + the model too, because it does the planning.
@@ -134,7 +136,7 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `Could not reach http://...` | Is the server running on the other laptop? Are you on the **same Wi-Fi**? Venue Wi-Fi often blocks laptops from seeing each other, so try a **phone hotspot**. Check the firewall prompt (see step 2). |
 | `Models shared: (none ...)` | Ollama isn't running on the server laptop, or the model isn't downloaded yet. Run `ollama pull llama3.2:3b` there. |
 | `model '...' is not allowed` | Only models in `peer/config.py` → `MODEL_ALLOWLIST` can run. |
-| `peer.split` only finds "this laptop" | The Wi-Fi may block broadcasts. List the other laptops yourself: `--peers 192.168.1.42`. |
+| `peer.split` only finds "this laptop" | Auto-find only checks addresses that share your first three numbers (e.g. `10.0.3.x`). Big networks put laptops on different ones. Run once with `--peers <their IP>` and it's remembered. |
 | Wrong IP printed | Find it yourself. Mac: `ipconfig getifaddr en0`. Windows: `ipconfig`, then look for "IPv4 Address". |
 
 ## Safety

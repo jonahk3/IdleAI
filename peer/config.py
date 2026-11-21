@@ -24,3 +24,6 @@ DISCOVERY_PORT = 8766
 
 # Folder where peer.split saves its answers.
 RESULTS_DIR = "results"
+
+# peer.split remembers laptops that worked here, and tries them again next time.
+KNOWN_PEERS_FILE = "known_peers.json"

@@ -6,3 +6,4 @@ worker/config.json
 *_output.csv
 *.db
 results/
+known_peers.json
