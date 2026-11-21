@@ -34,10 +34,3 @@ KNOWN_PEERS_FILE = "known_peers.json"
 ROOM_SERVICE_URL = os.environ.get("IDLE_ROOM_SERVICE", "https://ntfy.sh")
 ROOM_FILE = "room.txt"          # your room name is remembered here (never commit it)
 ROOM_ANNOUNCE_EVERY = 60 * 60   # re-post our address at least this often (seconds)
-
-# Splitting: each extra laptop adds a few seconds of overhead, so a laptop only
-# gets a slice if it has at least this many items to do.
-MIN_SMALL_ITEMS_PER_LAPTOP = 3   # numbers, words, short lines
-MIN_LARGE_ITEMS_PER_LAPTOP = 1   # documents, paragraphs, sections
-# The most tokens the planner may write (its reply is a short recipe, not the answer).
-PLANNER_MAX_TOKENS = 400

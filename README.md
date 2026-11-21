@@ -109,19 +109,13 @@ python3 -m peer.split "Write a beginner's guide to composting"
 What happens (the prompts for each step are in `peer/prompts.py`):
 
 1. **Find** the other laptops (room, remembered laptops, or the Wi-Fi).
-2. **Plan**: *your* model writes a quick **recipe**, not the answer: the final format, how
-   many items the answer has (e.g. 20 primes, 2 documents) and one instruction template
-   ("list primes number {start} to {end}"). It never solves anything, so this step is fast.
-   With only one laptop available, planning is skipped entirely.
-3. **Slice**: code (not the AI) cuts the items into even ranges (20 primes -> 1-7, 8-14, 15-20)
-   and uses **only as many laptops as make it faster**: at least 3 small items (numbers, words)
-   or 1 large item (document, section) per laptop. "Summarize 2 documents" uses 2 laptops; a short
-   answer uses 1. Tune this in `peer/config.py` (`MIN_SMALL_ITEMS_PER_LAPTOP`, `MIN_LARGE_ITEMS_PER_LAPTOP`).
-4. **Run**: all slices are sent out at once. If a laptop dies, yours redoes its slice.
-5. **Combine**: slices are pasted together in order (`--merge` makes your laptop rewrite them
-   into one text instead).
-6. **Check**: your model checks the result against the task and the planned format, and
-   lists possible problems (it's a small model, so treat this as a hint).
+2. **Plan**: *your* model writes one complete instruction per helper laptop, each producing a
+   different piece of the answer (e.g. "all primes from 2 to 29", "all primes from 31 to 71", ...).
+   It only uses as many laptops as make sense: a short task gets one.
+3. **Run**: all parts are sent out at once. Helpers only see their own instruction. If a laptop
+   dies, yours redoes its part.
+4. **Combine**: *your* model writes the final answer from the helpers' answers (fixing numbering,
+   duplicates and gaps).
 
 Results are shown and saved to `results/<date-time>.md`.
 
@@ -141,8 +135,6 @@ independent questions.
 ```
 
 Options:
-- `--merge`: always have your laptop rewrite the parts into one answer (normally the plan decides).
-- `--no-check`: skip the check step (a bit faster).
 - `--peers 192.168.1.42 192.168.1.57`: add laptops by IP (the IP their server printed), if
   auto-find doesn't work. Laptops that connect are **remembered** in `known_peers.json` and
   tried automatically next time, so you only need `--peers` once. `--forget` clears the list.

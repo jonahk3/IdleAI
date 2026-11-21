@@ -1,21 +1,18 @@
 """Split one big prompt across every laptop on the network, then put it back together.
 
-    python -m peer.split "Write a beginner's guide to composting"
+    python -m peer.split "Give me the first 30 prime numbers"
 
 What happens (the prompts for each step live in peer/prompts.py):
   1. FIND:    this laptop + every peer server in the room / on the Wi-Fi.
-  2. PLAN:    this laptop's model decides what the final answer looks like and
-              cuts it into slices of the ANSWER (e.g. primes 1-7, 8-14, 15-20).
-              Tasks that can't be cut up go to one laptop.
-  3. RUN:     every slice goes to a different laptop at the same time. If a
-              laptop fails, this laptop redoes its slice.
-  4. COMBINE: slices are pasted together in order (or rewritten, if the plan says so).
-  5. CHECK:   this laptop's model checks the result against the task and format.
+  2. PLAN:    this laptop's model writes one self-contained instruction per helper
+              (only as many as make sense; short tasks get one).
+  3. RUN:     every instruction goes to a different laptop at the same time. If a
+              laptop fails, this laptop redoes its part.
+  4. COMBINE: this laptop's model turns the helpers' answers into one final answer.
   Everything is shown and saved in results/.
 """
 import argparse
 import json
-import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -24,8 +21,7 @@ from pathlib import Path
 
 from peer import ollama, prompts
 from peer.chat import PeerClient
-from peer.config import (DEFAULT_MODEL, KNOWN_PEERS_FILE, MIN_LARGE_ITEMS_PER_LAPTOP,
-                         MIN_SMALL_ITEMS_PER_LAPTOP, PEER_PORT, PLANNER_MAX_TOKENS, RESULTS_DIR)
+from peer.config import DEFAULT_MODEL, KNOWN_PEERS_FILE, PEER_PORT, RESULTS_DIR
 from peer.discovery import discover, local_ip
 from peer.room import lookup, resolve_room
 
@@ -131,114 +127,32 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
     return devices
 
 
-# ---------------------------------------------------------------- plan, run, join, check
-@dataclass
-class Plan:
-    final_format: str
-    can_split: bool
-    parts: list[dict]               # [{"instruction", "expected_output"}, ...], filled in by code
-    combine: str = "join"
-    reason: str = ""                # why this many laptops (shown in the log)
-
-
-def ask_json(local: LocalDevice, model: str, system: str, user: str, schema: dict,
-             max_tokens: int = 400) -> dict:
-    """Ask this laptop's model for JSON matching a schema (falls back to plain JSON mode)."""
-    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    options = {"temperature": 0, "num_predict": max_tokens}
-    try:
-        reply = local.run(model, messages, json_format=schema, options=options)
-    except RuntimeError:  # older Ollama versions don't support schemas
-        reply = local.run(model, messages, json_format=True, options=options)
-    return json.loads(reply)
-
-
-def even_ranges(total: int, pieces: int) -> list[tuple[int, int]]:
-    """Cut items 1..total into `pieces` ranges whose sizes differ by at most one: 20, 3 -> 1-7, 8-14, 15-20."""
-    ranges, start = [], 1
-    for i in range(pieces):
-        size = total // pieces + (1 if i < total % pieces else 0)
-        ranges.append((start, start + size - 1))
-        start += size
-    return ranges
-
-
-def useful_laptops(items: int, size: str, available: int) -> int:
-    """How many laptops actually make it faster (each one adds some overhead)."""
-    per_laptop = MIN_LARGE_ITEMS_PER_LAPTOP if size == "large" else MIN_SMALL_ITEMS_PER_LAPTOP
-    return max(1, min(available, items // per_laptop))
-
-
-def fill_range(template: str, start: int, end: int) -> str:
-    if start == end:
-        template = template.replace("{start} to {end}", "{start}").replace("{start}-{end}", "{start}")
-    if "{start}" not in template:  # the planner forgot the placeholders: add the range ourselves
-        template += " Only do items {start} to {end}, numbered {start} to {end}."
-    return template.replace("{start}", str(start)).replace("{end}", str(end))
-
-
-def infer_total(value, *texts: str) -> int:
-    """The planner's item count, or (if it left it out) the first count in the format/task text."""
-    try:
-        total = int(value or 0)
-    except (TypeError, ValueError):
-        total = 0
-    if total >= 2:
-        return total
-    for text in texts:  # "30 numbers, numbered 1 to 30" / "Give me the first 30 prime numbers"
-        for number in re.findall(r"\b(\d{1,5})\b", text):
-            if 2 <= int(number) <= 10000:
-                return int(number)
-    return total
-
-
-def whole_task(task: str, final_format: str, reason: str) -> Plan:
-    return Plan(final_format, False, [{"instruction": task, "expected_output": final_format}], reason=reason)
-
-
-def plan(local: LocalDevice, model: str, task: str, available: int) -> Plan:
-    """Ask this laptop's model for a short recipe, then cut the work into slices in code."""
+# ---------------------------------------------------------------- plan, run, combine
+def plan(local: LocalDevice, model: str, task: str, available: int) -> list[str]:
+    """Ask this laptop's model for one self-contained instruction per helper."""
     if available == 1:
-        return whole_task(task, "Whatever best answers the task.", "only one laptop available, so no planning")
+        return [task]
     if local.fake:
-        raw = {"final_format": "(fake) a numbered list of 20 items", "split": "range", "total": 20,
-               "item_size": "small", "piece_instruction": "(fake) list items {start} to {end} of: " + task}
-    else:
+        return [f"(fake) part {i + 1} of {available} of: {task}" for i in range(available)]
+    messages = [
+        {"role": "system", "content": prompts.PLANNER_SYSTEM},
+        {"role": "user", "content": prompts.planner_user(task, available)},
+    ]
+    options = {"temperature": 0}
+    try:
         try:
-            raw = ask_json(local, model, prompts.PLANNER_SYSTEM, prompts.planner_user(task),
-                           prompts.PLAN_SCHEMA, PLANNER_MAX_TOKENS)
-        except (ValueError, KeyError, TypeError) as e:
-            return whole_task(task, "Whatever best answers the task.", f"planner reply unusable ({e})")
-    log("  recipe: " + json.dumps(raw, ensure_ascii=False))
-    final_format = str(raw.get("final_format", "")).strip() or "Whatever best answers the task."
-    template = str(raw.get("piece_instruction", "")).strip()
-    split = raw.get("split")
-
-    if split == "range" and template:
-        total = infer_total(raw.get("total"), final_format, task)
-        size = "large" if raw.get("item_size") == "large" else "small"
-        laptops = useful_laptops(total, size, available)
-        if total >= 2 and laptops > 1:
-            parts = [{"instruction": fill_range(template, a, b),
-                      "expected_output": f"only items {a} to {b}" if a != b else f"only item {a}"}
-                     for a, b in even_ranges(total, laptops)]
-            return Plan(final_format, True, parts,
-                        reason=f"{total} {size} item(s) -> {laptops} laptop(s) is the useful maximum")
-        return whole_task(task, final_format, f"only {total} {size} item(s), splitting wouldn't be faster")
-
-    if split == "sections" and template:
-        titles = [str(t).strip() for t in raw.get("sections") or [] if str(t).strip()]
-        laptops = useful_laptops(len(titles), "large", available)
-        if laptops > 1:
-            groups = [titles[a - 1:b] for a, b in even_ranges(len(titles), laptops)]
-            if "{sections}" not in template:
-                template += " Sections: {sections}"
-            parts = [{"instruction": template.replace("{sections}", "; ".join(f"'{t}'" for t in g)),
-                      "expected_output": "only these sections: " + "; ".join(g)} for g in groups]
-            return Plan(final_format, True, parts,
-                        reason=f"{len(titles)} section(s) -> {laptops} laptop(s)")
-
-    return whole_task(task, final_format, "the answer is short or can't be cut into independent slices")
+            reply = local.run(model, messages, json_format=prompts.PLAN_SCHEMA, options=options)
+        except RuntimeError:  # older Ollama versions don't support schemas
+            reply = local.run(model, messages, json_format=True, options=options)
+        parts = [str(x).strip() for x in json.loads(reply)["parts"] if str(x).strip()]
+    except (ValueError, KeyError, TypeError) as e:
+        log(f"  planner gave an unusable answer ({e}); one laptop will do the whole task")
+        return [task]
+    if not parts:
+        return [task]
+    if len(parts) > available:  # more parts than laptops: fold the extras into the last one
+        parts = parts[:available - 1] + [" Also: ".join(parts[available - 1:])]
+    return parts
 
 
 @dataclass
@@ -251,79 +165,46 @@ class PartResult:
     notes: list[str] = field(default_factory=list)
 
 
-def clean_piece(text: str) -> str:
-    """Drop chatty openers like 'Here is my part:' that small models add anyway."""
-    lines = text.strip().splitlines()
-    while lines and lines[0].strip().lower().startswith(("here is", "here are", "here's", "sure", "okay")) \
-            and lines[0].rstrip().endswith((":", "!", ".")):
-        lines.pop(0)
-    return "\n".join(lines).strip()
-
-
-def run_part(index: int, part: dict, total: int, the_plan: Plan, device: Device,
-             fallback: LocalDevice, model: str, task: str) -> PartResult:
+def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice, model: str) -> PartResult:
     messages = [
         {"role": "system", "content": prompts.WORKER_SYSTEM},
-        {"role": "user", "content": prompts.worker_user(
-            task, the_plan.final_format, part["instruction"], part["expected_output"], index + 1, total)},
+        {"role": "user", "content": instruction},
     ]
-    result = PartResult(index, part["instruction"], device.name)
+    result = PartResult(index, instruction, device.name)
     start = time.time()
     try:
-        result.text = device.run(model, messages)
+        result.text = device.run(model, messages).strip()
     except Exception as e:  # device died, Wi-Fi dropped, Ollama error...
         if device is fallback:
             raise
         log(f"  part {index + 1}: '{device.name}' failed ({e}); redoing it on this laptop")
         result.notes.append(f"'{device.name}' failed: {e}")
         result.device = fallback.name
-        result.text = fallback.run(model, messages)
-    result.text = clean_piece(result.text)
+        result.text = fallback.run(model, messages).strip()
     result.seconds = round(time.time() - start, 1)
     return result
 
 
-def join_pieces(pieces: list[str]) -> str:
-    """Paste pieces in order. List-like pieces go line after line; paragraphs get a blank line."""
-    multi_paragraph = any("\n\n" in p for p in pieces)
-    return ("\n\n" if multi_paragraph else "\n").join(pieces)
-
-
-def rewrite(local: LocalDevice, model: str, task: str, the_plan: Plan, pieces: list[str]) -> str:
+def combine(local: LocalDevice, model: str, task: str, parts: list[PartResult]) -> str:
+    """This laptop's model writes the final answer from the helpers' answers."""
     messages = [
-        {"role": "system", "content": prompts.REWRITE_SYSTEM},
-        {"role": "user", "content": prompts.rewrite_user(task, the_plan.final_format, pieces)},
+        {"role": "system", "content": prompts.COMBINE_SYSTEM},
+        {"role": "user", "content": prompts.combine_user(
+            task, [p.instruction for p in parts], [p.text for p in parts])},
     ]
-    return local.run(model, messages, options={"temperature": 0})
+    return local.run(model, messages, options={"temperature": 0}).strip()
 
 
-def check(local: LocalDevice, model: str, task: str, the_plan: Plan, answer: str) -> tuple[bool, list[str]]:
-    if local.fake:
-        return True, []
-    try:
-        raw = ask_json(local, model, prompts.CHECK_SYSTEM,
-                       prompts.check_user(task, the_plan.final_format, answer), prompts.CHECK_SCHEMA, 300)
-        problems = [str(p) for p in raw.get("problems", []) if str(p).strip()]
-        return bool(raw.get("looks_correct")) and not problems, problems
-    except (ValueError, KeyError, TypeError, RuntimeError) as e:
-        return False, [f"(the check itself failed: {e})"]
-
-
-def save(task: str, model: str, devices: list[Device], the_plan: Plan, parts: list[PartResult],
-         final: str, verdict: tuple[bool, list[str]] | None, total_seconds: float) -> Path:
+def save(task: str, model: str, workers: list[Device], parts: list[PartResult],
+         final: str, total_seconds: float) -> Path:
     out_dir = Path(RESULTS_DIR)
     out_dir.mkdir(exist_ok=True)
     path = out_dir / f"{time.strftime('%Y%m%d-%H%M%S')}.md"
     lines = [
         "# Result", "", f"**Prompt:** {task}", "",
-        f"**Model:** {model} · **Devices:** {', '.join(d.name for d in devices)} · "
-        f"**Total time:** {total_seconds}s", "",
-        f"**Planned format:** {the_plan.final_format} · **Combined by:** {the_plan.combine}", "",
+        f"**Model:** {model} · **Laptops used:** {', '.join(d.name for d in workers)} · "
+        f"**Total time:** {total_seconds}s", "", "## Final answer", "", final, "", "## Parts", "",
     ]
-    if verdict:
-        ok, problems = verdict
-        lines += ["**Check:** " + ("looks correct" if ok else "possible problems: " + "; ".join(problems)), ""]
-    lines += ["## Final answer", "", final, "", "## Parts", ""]
     for p in parts:
         lines += [f"### Part {p.index + 1} — {p.device} ({p.seconds}s)", "", f"*{p.instruction}*", ""]
         lines += [f"> note: {n}" for n in p.notes] + ([""] if p.notes else [])
@@ -339,9 +220,6 @@ def main() -> None:
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--peers", nargs="*", default=[], help="extra peer IPs, e.g. 192.168.1.42")
     parser.add_argument("--no-discover", action="store_true", help="only use --peers, don't search the Wi-Fi")
-    parser.add_argument("--merge", action="store_true",
-                        help="always have this laptop rewrite the parts into one answer (normally the plan decides)")
-    parser.add_argument("--no-check", action="store_true", help="skip the final check step")
     parser.add_argument("--fake", action="store_true", help="this laptop pretends to have a model (testing)")
     parser.add_argument("--forget", action="store_true", help="forget saved laptops (known_peers.json)")
     parser.add_argument("--room", help="room name to find laptops in (remembered)")
@@ -376,64 +254,44 @@ def main() -> None:
     for d in devices:
         log(f"  - {d.name} ({d.where})")
 
-    if len(devices) > 1:
-        log(f"PLAN: asking this laptop for a quick recipe ({len(devices)} laptop(s) available)...")
+    log(f"PLAN: this laptop is writing one instruction per helper ({len(devices)} laptop(s) available)...")
     plan_start = time.time()
-    the_plan = plan(local, args.model, prompt, len(devices))
-    if len(devices) > 1:
-        log(f"  planned in {time.time() - plan_start:.1f}s. Final answer should be: {the_plan.final_format}")
-    if the_plan.can_split:
-        log(f"  using {len(the_plan.parts)} of {len(devices)} laptop(s): {the_plan.reason}")
-        workers = devices[:len(the_plan.parts)]
-    else:
-        log(f"  one laptop will do it: {the_plan.reason}")
-        workers = [devices[1] if len(devices) > 1 else devices[0]]  # prefer a helper laptop
-    for i, (part, d) in enumerate(zip(the_plan.parts, workers)):
-        log(f"  part {i + 1} -> {d.name}: {part['instruction']}")
+    instructions = plan(local, args.model, prompt, len(devices))
+    log(f"  planned {len(instructions)} part(s) in {time.time() - plan_start:.1f}s")
+    # One part: give it to a helper laptop if there is one, so this laptop stays free.
+    workers = devices[:len(instructions)] if len(instructions) > 1 else [devices[-1]]
+    for i, (text, d) in enumerate(zip(instructions, workers)):
+        log(f"  part {i + 1} -> {d.name}: {text}")
 
     log("RUN: sending parts out (all at the same time)...")
     parts: list[PartResult] = []
-    total = len(the_plan.parts)
-    with ThreadPoolExecutor(max_workers=total) as pool:
-        futures = [pool.submit(run_part, i, part, total, the_plan, d, local, args.model, prompt)
-                   for i, (part, d) in enumerate(zip(the_plan.parts, workers))]
+    with ThreadPoolExecutor(max_workers=len(instructions)) as pool:
+        futures = [pool.submit(run_part, i, text, d, local, args.model)
+                   for i, (text, d) in enumerate(zip(instructions, workers))]
         for f in as_completed(futures):
             r = f.result()
             parts.append(r)
             log(f"  part {r.index + 1} done by {r.device} in {r.seconds}s")
     parts.sort(key=lambda p: p.index)
-    pieces = [p.text for p in parts]
 
-    if len(parts) > 1 and (args.merge or the_plan.combine == "rewrite"):
-        log("COMBINE: this laptop is rewriting the parts into one answer...")
-        final = rewrite(local, args.model, prompt, the_plan, pieces)
+    if len(parts) > 1:
+        log("COMBINE: this laptop is writing the final answer from the helpers' answers...")
+        combine_start = time.time()
+        final = combine(local, args.model, prompt, parts)
+        log(f"  combined in {time.time() - combine_start:.1f}s")
     else:
-        log("COMBINE: pasting the parts together in order")
-        final = join_pieces(pieces)
-
-    verdict = None
-    if not args.no_check:
-        log("CHECK: this laptop is checking the answer against the task and format...")
-        verdict = check(local, args.model, prompt, the_plan, final)
+        final = parts[0].text
 
     total_secs = round(time.time() - t0, 1)
-    path = save(prompt, args.model, devices, the_plan, parts, final, verdict, total_secs)
+    path = save(prompt, args.model, workers, parts, final, total_secs)
 
     print("\n" + "=" * 70)
     for p in parts:
         print(f"\n## Part {p.index + 1} — by {p.device} ({p.seconds}s)\n{p.instruction}\n")
         print(p.text)
     print("\n" + "=" * 70 + "\n## Final answer\n")
-    print(final.strip())
+    print(final)
     print("\n" + "=" * 70)
-    if verdict:
-        ok, problems = verdict
-        if ok:
-            log("Check: looks correct (checked by this laptop's model, which can be wrong)")
-        else:
-            log("Check: possible problems (checked by this laptop's model, which can be wrong):")
-            for prob in problems:
-                log(f"  - {prob}")
     log(f"Done in {total_secs}s using {len(workers)} laptop(s). Saved to {path}")
 
 

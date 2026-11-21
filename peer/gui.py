@@ -36,8 +36,6 @@ DEFAULTS = {
     "host_fake": False,
     "send_mode": "split",       # "split" or "one"
     "one_peer": "",
-    "rewrite": False,           # always rewrite parts into one answer (normally the plan decides)
-    "check": True,
     "search_wifi": True,
     "ask_fake": False,
     "extra_peers": "",
@@ -217,10 +215,8 @@ class IdleApp:
         how.pack(fill="x")
         ttk.Radiobutton(how, text="Split across all laptops", value="split",
                         variable=self.v["send_mode"]).grid(row=0, column=0, sticky="w")
-        ttk.Checkbutton(how, text="Check the answer",
-                        variable=self.v["check"]).grid(row=0, column=1, sticky="w", padx=12)
         ttk.Checkbutton(how, text="Also search the Wi-Fi",
-                        variable=self.v["search_wifi"]).grid(row=0, column=2, sticky="w")
+                        variable=self.v["search_wifi"]).grid(row=0, column=1, sticky="w", padx=12)
         ttk.Radiobutton(how, text="Just one laptop:", value="one",
                         variable=self.v["send_mode"]).grid(row=1, column=0, sticky="w", pady=(6, 0))
         self.peer_box = ttk.Combobox(how, textvariable=self.v["one_peer"], width=34)
@@ -232,8 +228,6 @@ class IdleApp:
             row=2, column=1, columnspan=2, sticky="we", padx=12, pady=(6, 0))
         ttk.Checkbutton(how, text="Fake model (testing)",
                         variable=self.v["ask_fake"]).grid(row=2, column=3, sticky="w", pady=(6, 0))
-        ttk.Checkbutton(how, text="Always rewrite into one answer",
-                        variable=self.v["rewrite"]).grid(row=0, column=3, sticky="w")
         how.columnconfigure(2, weight=1)
 
         self.preview = ttk.Label(f, text="", foreground="gray", wraplength=780, justify="left")
@@ -312,10 +306,6 @@ class IdleApp:
                                              "--model", self.get("model"), "--prompt", prompt]
         cmd = self.base("peer.split") + [prompt, "--model", self.get("model")]
         cmd += self.room_args() + self.peer_args()
-        if self.get("rewrite"):
-            cmd.append("--merge")
-        if not self.get("check"):
-            cmd.append("--no-check")
         if self.get("ask_fake"):
             cmd.append("--fake")
         return cmd
