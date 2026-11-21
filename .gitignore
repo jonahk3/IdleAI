@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+worker/config.json
+*_output.csv
+*.db
