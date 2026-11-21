@@ -1,83 +1,77 @@
 """All the instructions we give the AI models, in one place so they're easy to tune.
 
 How the system runs a prompt (the models are told this too):
-  1. PLAN:  this laptop's model decides what the final answer should look like and
-            cuts it into pieces (e.g. "primes 1-7", "primes 8-14", "primes 15-20").
-  2. RUN:   every piece is sent to a different laptop AT THE SAME TIME. Helpers
-            never see the plan, each other, or each other's results.
-  3. JOIN:  the pieces are pasted together in order (by code, not by a model).
-  4. CHECK: this laptop's model compares the result with the task and format.
-
-So pieces must be slices of the final ANSWER, never stages of the WORK
-("find a method" -> "implement it" -> "run it" can't work in parallel).
+  1. PLAN:    this laptop's model writes a short RECIPE, not the answer: the final
+              format, how many items the answer has, and one instruction template
+              like "List primes number {start} to {end}". It must not solve anything.
+  2. SLICE:   code (not a model) cuts the items into even ranges, only as many as
+              actually speed things up, and fills in the template for each laptop.
+  3. RUN:     every slice goes to a different laptop AT THE SAME TIME. Helpers never
+              see the plan, each other, or each other's results.
+  4. JOIN:    the pieces are pasted together in order (by code).
+  5. CHECK:   this laptop's model compares the result with the task and format.
 """
 
 # ---------------------------------------------------------------- 1. plan
+# Kept small on purpose: the shorter the planner's reply, the faster the plan step.
 PLAN_SCHEMA = {
     "type": "object",
     "properties": {
         "final_format": {"type": "string"},
-        "can_split": {"type": "boolean"},
-        "combine": {"type": "string", "enum": ["join", "rewrite"]},
-        "parts": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "instruction": {"type": "string"},
-                    "expected_output": {"type": "string"},
-                },
-                "required": ["instruction", "expected_output"],
-            },
-        },
+        "split": {"type": "string", "enum": ["none", "range", "sections"]},
+        "total": {"type": "integer"},
+        "item_size": {"type": "string", "enum": ["small", "large"]},
+        "sections": {"type": "array", "items": {"type": "string"}},
+        "piece_instruction": {"type": "string"},
     },
-    "required": ["final_format", "can_split", "combine", "parts"],
+    "required": ["final_format", "split", "piece_instruction"],
 }
 
-PLANNER_SYSTEM = """You are the planner for a system that answers BATCH tasks by splitting them across several helper computers.
+PLANNER_SYSTEM = """You plan how to split a BATCH task across helper computers. You ONLY plan: you never solve the task.
 
-HOW THE SYSTEM WORKS (important):
-- Every part you write is sent to a different helper, and ALL helpers work AT THE SAME TIME.
-- A helper sees ONLY its own instruction. It never sees your plan, the other parts, or any other helper's result.
-- When all helpers finish, their outputs are pasted together IN ORDER, exactly as written, to form the final answer.
-- So each part must directly produce ONE SLICE OF THE FINAL ANSWER, in the final format.
+How the system works:
+- Your plan is used by code to send pieces to helpers. All helpers work AT THE SAME TIME, and each sees only its own piece instruction (plus the original task).
+- Their outputs are pasted together in order to form the final answer.
+- So the answer must be cut into SLICES OF THE ANSWER (items 1-7, 8-14, ...), never into stages of work ("find a method", then "write code").
 
-RULES:
-1. First decide exactly what the final answer should look like (final_format): its form, its length, its numbering.
-2. Split the ANSWER, not the work. Give each part a different range of items, rows, numbers or sections.
-   WRONG: stages such as "find a method", "write code", "run the code", "check the results". A helper can't use another helper's result.
-3. Each instruction must be COMPLETE ON ITS OWN. Restate everything the helper needs: the exact range ("the 11th to 20th"), how to count, any input items (copy them in), the style, and the numbering to use (continue the global numbering, e.g. 11 to 20, not starting again at 1).
-4. Parts must not overlap and must together cover the WHOLE answer. Make parts about the same size.
-5. expected_output describes exactly what that helper should return (e.g. "10 lines, numbered 11 to 20, each just one number").
-6. Ask for the answer itself (the items, numbers or text). Don't ask for code, methods or explanations unless the task asks for them.
-7. If the task has one short answer, or can't be cut into independent slices, set can_split to false and give ONE part that is the whole task.
-8. combine is "join" when pasting the parts in order gives the finished answer (lists, tables, batches of items). Use "rewrite" only when the parts must be woven into one flowing text.
-9. Use AT MOST the number of parts you are given. Use fewer if the task is small.
+Rules:
+1. Do NOT work out any part of the answer. Never write answer values (numbers, names, translations, facts) in your plan. Be brief.
+2. final_format: one short sentence describing the finished answer (form, count, numbering).
+3. split:
+   - "range": the answer is a list of countable items (N numbers, N names, N rows, N questions, one result per input item or document). Set total = how many items, item_size = "small" (a number, word or short line) or "large" (a paragraph, a summary of a document, anything long).
+   - "sections": the answer is a long text with distinct parts. List short section titles in sections (no content).
+   - "none": the answer is short or can't be cut into independent slices.
+4. piece_instruction: ONE instruction a helper follows to produce its slice, self-contained (say how to count, the style and the numbering).
+   - For "range", write {start} and {end} where the helper's item numbers go, and number items {start} to {end}.
+   - For "sections", write {sections} where the helper's section titles go.
+   - For "none", just restate the task.
 
-EXAMPLE 1. Task: "List the first 30 square numbers", 3 helpers ->
-{"final_format": "A numbered list of the first 30 square numbers, one per line, numbered 1 to 30, like '1. 1'.",
- "can_split": true, "combine": "join",
- "parts": [
-  {"instruction": "List the 1st to 10th square numbers (1 squared is the 1st). One per line, numbered 1 to 10, like '1. 1'.", "expected_output": "10 lines numbered 1 to 10, from '1. 1' to '10. 100'"},
-  {"instruction": "List the 11th to 20th square numbers (1 squared is the 1st, so start at 11 squared). One per line, numbered 11 to 20.", "expected_output": "10 lines numbered 11 to 20, from '11. 121' to '20. 400'"},
-  {"instruction": "List the 21st to 30th square numbers (1 squared is the 1st, so start at 21 squared). One per line, numbered 21 to 30.", "expected_output": "10 lines numbered 21 to 30, from '21. 441' to '30. 900'"}]}
+Examples (note: no answer values anywhere):
+Task: "List the first 30 square numbers"
+{"final_format": "30 lines, numbered 1 to 30, each like '1. 1'", "split": "range", "total": 30, "item_size": "small",
+ "piece_instruction": "List square numbers number {start} to {end} (1 squared is number 1). One per line, numbered {start} to {end}, like '{start}. <square>'."}
 
-EXAMPLE 2. Task: "Write 6 quiz questions about Canadian geography with answers", 2 helpers ->
-{"final_format": "6 numbered questions, each followed by 'Answer: ...' on the next line.",
- "can_split": true, "combine": "join",
- "parts": [
-  {"instruction": "Write 3 quiz questions about Canadian PROVINCES AND CAPITALS, each followed by 'Answer: ...' on the next line. Number them 1 to 3.", "expected_output": "Questions 1-3, each with an Answer line"},
-  {"instruction": "Write 3 quiz questions about Canadian RIVERS, LAKES AND MOUNTAINS, each followed by 'Answer: ...' on the next line. Number them 4 to 6.", "expected_output": "Questions 4-6, each with an Answer line"}]}
+Task: "Translate into French: <4 sentences>"
+{"final_format": "4 numbered French sentences, one per line", "split": "range", "total": 4, "item_size": "small",
+ "piece_instruction": "Translate sentences {start} to {end} of the task into French. One per line, numbered {start} to {end}. Only the translations."}
 
-EXAMPLE 3. Task: "What is the capital of Australia?", 3 helpers ->
-{"final_format": "One short sentence.", "can_split": false, "combine": "join",
- "parts": [{"instruction": "What is the capital of Australia? Answer in one short sentence.", "expected_output": "One sentence naming the capital"}]}
+Task: "Summarize these two articles: <article 1> <article 2>"
+{"final_format": "2 summaries, each headed 'Article N:'", "split": "range", "total": 2, "item_size": "large",
+ "piece_instruction": "Summarize article {start} to {end} of the task in 3 sentences each, headed 'Article N:'."}
+
+Task: "Write a beginner's guide to composting"
+{"final_format": "A guide with 4 sections, each with a '## ' heading", "split": "sections",
+ "sections": ["What composting is", "What to put in", "How to start a pile", "Common problems"],
+ "piece_instruction": "Write these section(s) of a beginner's guide to composting, each starting with a '## ' heading: {sections}. Two short paragraphs each."}
+
+Task: "What is the capital of Australia?"
+{"final_format": "One short sentence", "split": "none", "piece_instruction": "What is the capital of Australia? Answer in one sentence."}
 
 Reply with JSON only."""
 
 
-def planner_user(task: str, helpers: int) -> str:
-    return f"Task: {task}\n\nNumber of helpers available: {helpers} (use at most {helpers} parts)."
+def planner_user(task: str) -> str:
+    return f"Task: {task}"
 
 
 # ---------------------------------------------------------------- 2. run (each helper)

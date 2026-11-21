@@ -22,7 +22,8 @@ from pathlib import Path
 
 from peer import ollama, prompts
 from peer.chat import PeerClient
-from peer.config import DEFAULT_MODEL, KNOWN_PEERS_FILE, PEER_PORT, RESULTS_DIR
+from peer.config import (DEFAULT_MODEL, KNOWN_PEERS_FILE, MIN_LARGE_ITEMS_PER_LAPTOP,
+                         MIN_SMALL_ITEMS_PER_LAPTOP, PEER_PORT, PLANNER_MAX_TOKENS, RESULTS_DIR)
 from peer.discovery import discover, local_ip
 from peer.room import lookup, resolve_room
 
@@ -47,11 +48,11 @@ class LocalDevice(Device):
         self.name, self.where, self.fake = "this laptop", "localhost", fake
 
     def run(self, model: str, messages: list[dict], json_format: bool | dict = False,
-            temperature: float | None = None) -> str:
+            options: dict | None = None) -> str:
         if self.fake:
             time.sleep(0.3)
             return f"(fake local answer to: {messages[-1]['content'][-80:]})"
-        return ollama.chat(model, messages, json_format, temperature)
+        return ollama.chat(model, messages, json_format, options)
 
 
 class RemoteDevice(Device):
@@ -133,51 +134,96 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
 class Plan:
     final_format: str
     can_split: bool
-    combine: str                    # "join" or "rewrite"
-    parts: list[dict]               # [{"instruction", "expected_output"}, ...]
+    parts: list[dict]               # [{"instruction", "expected_output"}, ...], filled in by code
+    combine: str = "join"
+    reason: str = ""                # why this many laptops (shown in the log)
 
 
-def ask_json(local: LocalDevice, model: str, system: str, user: str, schema: dict) -> dict:
+def ask_json(local: LocalDevice, model: str, system: str, user: str, schema: dict,
+             max_tokens: int = 400) -> dict:
     """Ask this laptop's model for JSON matching a schema (falls back to plain JSON mode)."""
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    options = {"temperature": 0, "num_predict": max_tokens}
     try:
-        reply = local.run(model, messages, json_format=schema, temperature=0)
+        reply = local.run(model, messages, json_format=schema, options=options)
     except RuntimeError:  # older Ollama versions don't support schemas
-        reply = local.run(model, messages, json_format=True, temperature=0)
+        reply = local.run(model, messages, json_format=True, options=options)
     return json.loads(reply)
 
 
-def plan(local: LocalDevice, model: str, task: str, helpers: int) -> Plan:
-    """Ask this laptop's model what the answer looks like and how to cut it into slices."""
-    whole = Plan("Whatever best answers the task.", False, "join",
-                 [{"instruction": task, "expected_output": "the complete answer"}])
+def even_ranges(total: int, pieces: int) -> list[tuple[int, int]]:
+    """Cut items 1..total into `pieces` ranges whose sizes differ by at most one: 20, 3 -> 1-7, 8-14, 15-20."""
+    ranges, start = [], 1
+    for i in range(pieces):
+        size = total // pieces + (1 if i < total % pieces else 0)
+        ranges.append((start, start + size - 1))
+        start += size
+    return ranges
+
+
+def useful_laptops(items: int, size: str, available: int) -> int:
+    """How many laptops actually make it faster (each one adds some overhead)."""
+    per_laptop = MIN_LARGE_ITEMS_PER_LAPTOP if size == "large" else MIN_SMALL_ITEMS_PER_LAPTOP
+    return max(1, min(available, items // per_laptop))
+
+
+def fill_range(template: str, start: int, end: int) -> str:
+    if start == end:
+        template = template.replace("{start} to {end}", "{start}").replace("{start}-{end}", "{start}")
+    if "{start}" not in template:  # the planner forgot the placeholders: add the range ourselves
+        template += " Only do items {start} to {end}, numbered {start} to {end}."
+    return template.replace("{start}", str(start)).replace("{end}", str(end))
+
+
+def whole_task(task: str, final_format: str, reason: str) -> Plan:
+    return Plan(final_format, False, [{"instruction": task, "expected_output": final_format}], reason=reason)
+
+
+def plan(local: LocalDevice, model: str, task: str, available: int) -> Plan:
+    """Ask this laptop's model for a short recipe, then cut the work into slices in code."""
+    if available == 1:
+        return whole_task(task, "Whatever best answers the task.", "only one laptop available, so no planning")
     if local.fake:
-        return Plan("(fake) a numbered list", helpers > 1, "join", [
-            {"instruction": f"(fake) slice {i + 1} of {helpers} of: {task}", "expected_output": f"slice {i + 1}"}
-            for i in range(helpers)])
-    try:
-        raw = ask_json(local, model, prompts.PLANNER_SYSTEM, prompts.planner_user(task, helpers),
-                       prompts.PLAN_SCHEMA)
-        parts = [{"instruction": str(x["instruction"]).strip(),
-                  "expected_output": str(x.get("expected_output", "")).strip()}
-                 for x in raw["parts"] if str(x.get("instruction", "")).strip()]
-        result = Plan(str(raw["final_format"]).strip(), bool(raw["can_split"]),
-                      "rewrite" if raw.get("combine") == "rewrite" else "join", parts)
-    except (ValueError, KeyError, TypeError) as e:
-        log(f"Planner gave an unusable answer ({e}); running the whole prompt on one laptop.")
-        return whole
-    if not result.parts:
-        return whole
-    if not result.can_split or len(result.parts) == 1:
-        # One slice only: send the original task (plus the format) rather than a paraphrase.
-        return Plan(result.final_format, False, "join",
-                    [{"instruction": task, "expected_output": result.final_format}])
-    if len(result.parts) > helpers:  # more slices than laptops: fold extras into the last one
-        extra = result.parts[helpers - 1:]
-        result.parts = result.parts[:helpers - 1] + [{
-            "instruction": " Then: ".join(x["instruction"] for x in extra),
-            "expected_output": " then ".join(x["expected_output"] for x in extra)}]
-    return result
+        raw = {"final_format": "(fake) a numbered list of 20 items", "split": "range", "total": 20,
+               "item_size": "small", "piece_instruction": "(fake) list items {start} to {end} of: " + task}
+    else:
+        try:
+            raw = ask_json(local, model, prompts.PLANNER_SYSTEM, prompts.planner_user(task),
+                           prompts.PLAN_SCHEMA, PLANNER_MAX_TOKENS)
+        except (ValueError, KeyError, TypeError) as e:
+            return whole_task(task, "Whatever best answers the task.", f"planner reply unusable ({e})")
+    final_format = str(raw.get("final_format", "")).strip() or "Whatever best answers the task."
+    template = str(raw.get("piece_instruction", "")).strip()
+    split = raw.get("split")
+
+    if split == "range" and template:
+        try:
+            total = int(raw.get("total") or 0)
+        except (TypeError, ValueError):
+            total = 0
+        size = "large" if raw.get("item_size") == "large" else "small"
+        laptops = useful_laptops(total, size, available)
+        if total >= 2 and laptops > 1:
+            parts = [{"instruction": fill_range(template, a, b),
+                      "expected_output": f"only items {a} to {b}" if a != b else f"only item {a}"}
+                     for a, b in even_ranges(total, laptops)]
+            return Plan(final_format, True, parts,
+                        reason=f"{total} {size} item(s) -> {laptops} laptop(s) is the useful maximum")
+        return whole_task(task, final_format, f"only {total} {size} item(s), splitting wouldn't be faster")
+
+    if split == "sections" and template:
+        titles = [str(t).strip() for t in raw.get("sections") or [] if str(t).strip()]
+        laptops = useful_laptops(len(titles), "large", available)
+        if laptops > 1:
+            groups = [titles[a - 1:b] for a, b in even_ranges(len(titles), laptops)]
+            if "{sections}" not in template:
+                template += " Sections: {sections}"
+            parts = [{"instruction": template.replace("{sections}", "; ".join(f"'{t}'" for t in g)),
+                      "expected_output": "only these sections: " + "; ".join(g)} for g in groups]
+            return Plan(final_format, True, parts,
+                        reason=f"{len(titles)} section(s) -> {laptops} laptop(s)")
+
+    return whole_task(task, final_format, "the answer is short or can't be cut into independent slices")
 
 
 @dataclass
@@ -233,7 +279,7 @@ def rewrite(local: LocalDevice, model: str, task: str, the_plan: Plan, pieces: l
         {"role": "system", "content": prompts.REWRITE_SYSTEM},
         {"role": "user", "content": prompts.rewrite_user(task, the_plan.final_format, pieces)},
     ]
-    return local.run(model, messages, temperature=0)
+    return local.run(model, messages, options={"temperature": 0})
 
 
 def check(local: LocalDevice, model: str, task: str, the_plan: Plan, answer: str) -> tuple[bool, list[str]]:
@@ -241,7 +287,7 @@ def check(local: LocalDevice, model: str, task: str, the_plan: Plan, answer: str
         return True, []
     try:
         raw = ask_json(local, model, prompts.CHECK_SYSTEM,
-                       prompts.check_user(task, the_plan.final_format, answer), prompts.CHECK_SCHEMA)
+                       prompts.check_user(task, the_plan.final_format, answer), prompts.CHECK_SCHEMA, 300)
         problems = [str(p) for p in raw.get("problems", []) if str(p).strip()]
         return bool(raw.get("looks_correct")) and not problems, problems
     except (ValueError, KeyError, TypeError, RuntimeError) as e:
@@ -313,14 +359,17 @@ def main() -> None:
     for d in devices:
         log(f"  - {d.name} ({d.where})")
 
-    log(f"PLAN: asking this laptop how to split the prompt ({len(devices)} laptop(s) available)...")
+    if len(devices) > 1:
+        log(f"PLAN: asking this laptop for a quick recipe ({len(devices)} laptop(s) available)...")
+    plan_start = time.time()
     the_plan = plan(local, args.model, prompt, len(devices))
-    log(f"  final answer should be: {the_plan.final_format}")
+    if len(devices) > 1:
+        log(f"  planned in {time.time() - plan_start:.1f}s. Final answer should be: {the_plan.final_format}")
     if the_plan.can_split:
-        log(f"  split into {len(the_plan.parts)} slice(s), combined by: {the_plan.combine}")
+        log(f"  using {len(the_plan.parts)} of {len(devices)} laptop(s): {the_plan.reason}")
         workers = devices[:len(the_plan.parts)]
     else:
-        log("  this task can't be split into independent slices, so one laptop will do it")
+        log(f"  one laptop will do it: {the_plan.reason}")
         workers = [devices[1] if len(devices) > 1 else devices[0]]  # prefer a helper laptop
     for i, (part, d) in enumerate(zip(the_plan.parts, workers)):
         log(f"  part {i + 1} -> {d.name}: {part['instruction']}")

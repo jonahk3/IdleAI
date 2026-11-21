@@ -109,15 +109,18 @@ python3 -m peer.split "Write a beginner's guide to composting"
 What happens (the prompts for each step are in `peer/prompts.py`):
 
 1. **Find** the other laptops (room, remembered laptops, or the Wi-Fi).
-2. **Plan**: *your* model decides what the final answer should look like, then cuts the
-   **answer** into slices, one per laptop. For "the first 20 primes" that's primes 1-7, 8-14
-   and 15-20, never stages like "find a method" then "write code", because every laptop works
-   at the same time and none sees the others' work. Tasks that can't be cut up (one short
-   answer) go to one laptop.
-3. **Run**: all slices are sent out at once. If a laptop dies, yours redoes its slice.
-4. **Combine**: slices are pasted together in order. If the plan says the parts must be
-   woven into one text, your laptop rewrites them.
-5. **Check**: your model checks the result against the task and the planned format, and
+2. **Plan**: *your* model writes a quick **recipe**, not the answer: the final format, how
+   many items the answer has (e.g. 20 primes, 2 documents) and one instruction template
+   ("list primes number {start} to {end}"). It never solves anything, so this step is fast.
+   With only one laptop available, planning is skipped entirely.
+3. **Slice**: code (not the AI) cuts the items into even ranges (20 primes -> 1-7, 8-14, 15-20)
+   and uses **only as many laptops as make it faster**: at least 3 small items (numbers, words)
+   or 1 large item (document, section) per laptop. "Summarize 2 documents" uses 2 laptops; a short
+   answer uses 1. Tune this in `peer/config.py` (`MIN_SMALL_ITEMS_PER_LAPTOP`, `MIN_LARGE_ITEMS_PER_LAPTOP`).
+4. **Run**: all slices are sent out at once. If a laptop dies, yours redoes its slice.
+5. **Combine**: slices are pasted together in order (`--merge` makes your laptop rewrite them
+   into one text instead).
+6. **Check**: your model checks the result against the task and the planned format, and
    lists possible problems (it's a small model, so treat this as a hint).
 
 Results are shown and saved to `results/<date-time>.md`.

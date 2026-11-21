@@ -18,18 +18,20 @@ def installed_models() -> list[str]:
 
 
 def chat_stream(model: str, messages: list[dict], json_format: bool | dict = False,
-                temperature: float | None = None):
+                options: dict | None = None):
     """Yield pieces of the reply as Ollama generates them.
 
     json_format=True forces valid JSON; a dict is a JSON schema the reply must follow.
+    options are Ollama model settings, e.g. {"temperature": 0, "num_predict": 300}
+    (num_predict = the most tokens the model may write).
     """
     if model not in MODEL_ALLOWLIST:
         raise ValueError(f"model {model!r} is not allowed")
     body = {"model": model, "messages": messages, "stream": True}
     if json_format:
         body["format"] = json_format if isinstance(json_format, dict) else "json"
-    if temperature is not None:
-        body["options"] = {"temperature": temperature}
+    if options:
+        body["options"] = options
     req = urllib.request.Request(
         f"{OLLAMA_URL}/api/chat",
         data=json.dumps(body).encode(),
@@ -48,6 +50,6 @@ def chat_stream(model: str, messages: list[dict], json_format: bool | dict = Fal
 
 
 def chat(model: str, messages: list[dict], json_format: bool | dict = False,
-         temperature: float | None = None) -> str:
+         options: dict | None = None) -> str:
     """Return the whole reply as one string."""
-    return "".join(chat_stream(model, messages, json_format, temperature))
+    return "".join(chat_stream(model, messages, json_format, options))
