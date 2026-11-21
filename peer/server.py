@@ -12,11 +12,11 @@ import argparse
 import json
 import socket
 import time
-import urllib.error
-import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from peer.config import MODEL_ALLOWLIST, OLLAMA_TIMEOUT, OLLAMA_URL, PEER_PORT
+from peer.config import MODEL_ALLOWLIST, PEER_PORT
+from peer.discovery import local_ip, start_responder
+from peer.ollama import chat_stream, installed_models
 
 ALLOWED_ROLES = {"system", "user", "assistant"}
 MAX_MESSAGES = 100
@@ -25,29 +25,6 @@ MAX_CHARS_PER_MESSAGE = 20_000
 
 def log(msg: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
-
-
-def local_ip() -> str:
-    """Best guess at this laptop's address on the Wi-Fi (what others type in)."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))  # no data is sent; this just picks the right network card
-        return s.getsockname()[0]
-    except OSError:
-        return "127.0.0.1"
-    finally:
-        s.close()
-
-
-def installed_models() -> list[str]:
-    """Models that are both downloaded in Ollama and on the allowlist."""
-    try:
-        with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=5) as resp:
-            data = json.load(resp)
-    except (urllib.error.URLError, OSError):
-        return []
-    names = {m["name"] for m in data.get("models", [])}
-    return [m for m in MODEL_ALLOWLIST if m in names]
 
 
 def validate_chat_request(body: dict) -> tuple[str, list[dict]]:
@@ -67,24 +44,6 @@ def validate_chat_request(body: dict) -> tuple[str, list[dict]]:
             raise ValueError("each message needs text content (not too long)")
         clean.append({"role": m["role"], "content": content})
     return model, clean
-
-
-def stream_from_ollama(model: str, messages: list[dict]):
-    """Yield pieces of the reply as Ollama generates them."""
-    payload = json.dumps({"model": model, "messages": messages, "stream": True}).encode()
-    req = urllib.request.Request(
-        f"{OLLAMA_URL}/api/chat", data=payload, headers={"Content-Type": "application/json"}
-    )
-    with urllib.request.urlopen(req, timeout=OLLAMA_TIMEOUT) as resp:
-        for line in resp:  # Ollama sends one JSON object per line
-            if not line.strip():
-                continue
-            part = json.loads(line)
-            if "error" in part:
-                raise RuntimeError(part["error"])
-            yield part.get("message", {}).get("content", "")
-            if part.get("done"):
-                return
 
 
 def stream_fake(model: str, messages: list[dict]):
@@ -146,7 +105,7 @@ class PeerHandler(BaseHTTPRequestHandler):
         self.end_headers()
         start = time.time()
         chars = 0
-        gen = stream_fake if self.fake else stream_from_ollama
+        gen = stream_fake if self.fake else chat_stream
         try:
             for piece in gen(model, messages):
                 chars += len(piece)
@@ -183,6 +142,8 @@ def main() -> None:
             log(f"Ollama OK. Sharing models: {', '.join(models)}")
 
     server = ThreadingHTTPServer(("0.0.0.0", args.port), PeerHandler)
+    if not start_responder(args.name, args.port):
+        log("WARNING: discovery port busy, so peer.split can't auto-find this laptop (use --peers).")
     log(f"Peer '{args.name}' is up.")
     log(f"Tell your teammate to run:  python -m peer.chat --peer {local_ip()}")
     log("Press Ctrl+C to stop.")

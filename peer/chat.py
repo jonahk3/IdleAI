@@ -48,6 +48,8 @@ class PeerClient:
                     yield part
                     return
                 yield part["token"]
+        # The stream ended without a "done" message: the other laptop went away mid-reply.
+        raise RuntimeError("connection lost before the reply finished")
 
 
 def main() -> None:

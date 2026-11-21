@@ -18,3 +18,9 @@ DEFAULT_MODEL = "llama3.2:3b"
 
 # Max time (seconds) to wait for Ollama to answer one message.
 OLLAMA_TIMEOUT = 300
+
+# UDP port used to find other laptops on the Wi-Fi ("who's out there?").
+DISCOVERY_PORT = 8766
+
+# Folder where peer.split saves its answers.
+RESULTS_DIR = "results"

@@ -1,7 +1,8 @@
 # Idle — share your laptop's AI with teammates
 
-**Step 1 (this code):** two laptops on the same Wi-Fi. Each one can chat with the
-AI model running on the *other* laptop, using [Ollama](https://ollama.com).
+Laptops on the same Wi-Fi share their AI models (via [Ollama](https://ollama.com)):
+- **Chat** with the model on another laptop (`peer.chat`).
+- **Split** one prompt across every laptop at once and collect the answers (`peer.split`).
 
 Later this grows into a carbon-aware system that splits batch AI jobs across many
 laptops (see "Where this is going" at the bottom).
@@ -77,6 +78,43 @@ Chat commands: `/models`, `/model NAME`, `/reset` (forget the conversation), `/q
 
 To go both ways, Alice also runs `peer.server`, and Bob runs `peer.chat --peer <Alice's IP>`.
 
+## 4. Split one prompt across ALL the laptops
+
+Every helper laptop runs `python3 -m peer.server` (step 2). Then, on the laptop
+asking the question:
+
+```bash
+python3 -m peer.split "Write a beginner's guide to composting"
+```
+
+What happens:
+
+1. **Find** other laptops on the Wi-Fi automatically (they answer a broadcast).
+2. **Plan**: *your* Ollama splits the prompt into one part per laptop (yours included).
+3. **Run**: all parts are sent out at the same time. If a laptop dies or disconnects,
+   your laptop redoes its part, so you still get a full answer.
+4. **Collect**: the answers are shown in order and saved to `results/<date-time>.md`.
+
+```
+[14:10:02] 3 device(s) available:
+[14:10:02]   - this laptop (localhost)
+[14:10:02]   - bob (192.168.1.42:8765)
+[14:10:02]   - carol (192.168.1.57:8765)
+[14:10:05]   part 1 -> this laptop: Explain what composting is and why it helps
+[14:10:05]   part 2 -> bob: List what can and can't go in a compost bin
+[14:10:05]   part 3 -> carol: Give step-by-step instructions to start a compost pile
+...
+[14:10:31] Done in 29.4s using 3 device(s). Saved to results/20261121-141031.md
+```
+
+Options:
+- `--merge`: after collecting, your laptop rewrites the parts into one smooth answer.
+- `--peers 192.168.1.42 192.168.1.57`: add laptops by IP, if auto-find doesn't work
+  (some Wi-Fi blocks broadcasts). Add `--no-discover` to use only these.
+- Leave out the prompt and it will ask you for one.
+
+The laptop running `peer.split` needs Ollama + the model too, because it does the planning.
+
 ## Testing without Ollama
 
 To check the network connection before Ollama is installed, run the server with a fake
@@ -96,6 +134,7 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `Could not reach http://...` | Is the server running on the other laptop? Are you on the **same Wi-Fi**? Venue Wi-Fi often blocks laptops from seeing each other, so try a **phone hotspot**. Check the firewall prompt (see step 2). |
 | `Models shared: (none ...)` | Ollama isn't running on the server laptop, or the model isn't downloaded yet. Run `ollama pull llama3.2:3b` there. |
 | `model '...' is not allowed` | Only models in `peer/config.py` → `MODEL_ALLOWLIST` can run. |
+| `peer.split` only finds "this laptop" | The Wi-Fi may block broadcasts. List the other laptops yourself: `--peers 192.168.1.42`. |
 | Wrong IP printed | Find it yourself. Mac: `ipconfig getifaddr en0`. Windows: `ipconfig`, then look for "IPv4 Address". |
 
 ## Safety
@@ -114,6 +153,9 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `peer/config.py` | Port, Ollama address, model allowlist |
 | `peer/server.py` | Receives chat requests from other laptops and passes them to local Ollama |
 | `peer/chat.py` | Interactive chat client you run to talk to another laptop |
+| `peer/split.py` | Splits one prompt into parts, runs them on all laptops at once, then collects and saves the answers |
+| `peer/discovery.py` | Finds other laptops on the Wi-Fi (UDP broadcast on port 8766) |
+| `peer/ollama.py` | Talks to the Ollama on this laptop |
 
 ## Where this is going
 
