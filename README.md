@@ -106,13 +106,24 @@ asking the question:
 python3 -m peer.split "Write a beginner's guide to composting"
 ```
 
-What happens:
+What happens (the prompts for each step are in `peer/prompts.py`):
 
-1. **Find** other laptops on the Wi-Fi automatically (they answer a broadcast).
-2. **Plan**: *your* Ollama splits the prompt into one part per laptop (yours included).
-3. **Run**: all parts are sent out at the same time. If a laptop dies or disconnects,
-   your laptop redoes its part, so you still get a full answer.
-4. **Collect**: the answers are shown in order and saved to `results/<date-time>.md`.
+1. **Find** the other laptops (room, remembered laptops, or the Wi-Fi).
+2. **Plan**: *your* model decides what the final answer should look like, then cuts the
+   **answer** into slices, one per laptop. For "the first 20 primes" that's primes 1-7, 8-14
+   and 15-20, never stages like "find a method" then "write code", because every laptop works
+   at the same time and none sees the others' work. Tasks that can't be cut up (one short
+   answer) go to one laptop.
+3. **Run**: all slices are sent out at once. If a laptop dies, yours redoes its slice.
+4. **Combine**: slices are pasted together in order. If the plan says the parts must be
+   woven into one text, your laptop rewrites them.
+5. **Check**: your model checks the result against the task and the planned format, and
+   lists possible problems (it's a small model, so treat this as a hint).
+
+Results are shown and saved to `results/<date-time>.md`.
+
+This works best for **batch** tasks: lists, sets of items, rows to process, several
+independent questions.
 
 ```
 [14:10:02] 3 device(s) available:
@@ -127,7 +138,8 @@ What happens:
 ```
 
 Options:
-- `--merge`: after collecting, your laptop rewrites the parts into one smooth answer.
+- `--merge`: always have your laptop rewrite the parts into one answer (normally the plan decides).
+- `--no-check`: skip the check step (a bit faster).
 - `--peers 192.168.1.42 192.168.1.57`: add laptops by IP (the IP their server printed), if
   auto-find doesn't work. Laptops that connect are **remembered** in `known_peers.json` and
   tried automatically next time, so you only need `--peers` once. `--forget` clears the list.
@@ -203,6 +215,7 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `peer/config.py` | Port, Ollama address, model allowlist |
 | `peer/server.py` | Receives chat requests from other laptops and passes them to local Ollama |
 | `peer/chat.py` | Interactive chat client you run to talk to another laptop |
+| `peer/prompts.py` | Every instruction given to the models (plan, helper, rewrite, check), in one place to tune |
 | `peer/split.py` | Splits one prompt into parts, runs them on all laptops at once, then collects and saves the answers |
 | `peer/gui.py` | The window: builds and runs the commands below for you, remembers settings |
 | `peer/room.py` | Rooms: posts/reads laptop addresses on ntfy.sh so peers find each other |

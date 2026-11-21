@@ -36,7 +36,8 @@ DEFAULTS = {
     "host_fake": False,
     "send_mode": "split",       # "split" or "one"
     "one_peer": "",
-    "merge": True,
+    "rewrite": False,           # always rewrite parts into one answer (normally the plan decides)
+    "check": True,
     "search_wifi": True,
     "ask_fake": False,
     "extra_peers": "",
@@ -47,7 +48,8 @@ DEFAULTS = {
 def load_settings() -> dict:
     settings = dict(DEFAULTS)
     try:
-        settings.update(json.loads(Path(SETTINGS_FILE).read_text()))
+        saved = json.loads(Path(SETTINGS_FILE).read_text())
+        settings.update({k: v for k, v in saved.items() if k in DEFAULTS})
     except (OSError, ValueError):
         pass
     if not settings["room"]:  # fall back to the room the command-line tools saved
@@ -215,8 +217,8 @@ class IdleApp:
         how.pack(fill="x")
         ttk.Radiobutton(how, text="Split across all laptops", value="split",
                         variable=self.v["send_mode"]).grid(row=0, column=0, sticky="w")
-        ttk.Checkbutton(how, text="Merge parts into one answer",
-                        variable=self.v["merge"]).grid(row=0, column=1, sticky="w", padx=12)
+        ttk.Checkbutton(how, text="Check the answer",
+                        variable=self.v["check"]).grid(row=0, column=1, sticky="w", padx=12)
         ttk.Checkbutton(how, text="Also search the Wi-Fi",
                         variable=self.v["search_wifi"]).grid(row=0, column=2, sticky="w")
         ttk.Radiobutton(how, text="Just one laptop:", value="one",
@@ -230,6 +232,8 @@ class IdleApp:
             row=2, column=1, columnspan=2, sticky="we", padx=12, pady=(6, 0))
         ttk.Checkbutton(how, text="Fake model (testing)",
                         variable=self.v["ask_fake"]).grid(row=2, column=3, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(how, text="Always rewrite into one answer",
+                        variable=self.v["rewrite"]).grid(row=0, column=3, sticky="w")
         how.columnconfigure(2, weight=1)
 
         self.preview = ttk.Label(f, text="", foreground="gray", wraplength=780, justify="left")
@@ -308,8 +312,10 @@ class IdleApp:
                                              "--model", self.get("model"), "--prompt", prompt]
         cmd = self.base("peer.split") + [prompt, "--model", self.get("model")]
         cmd += self.room_args() + self.peer_args()
-        if self.get("merge"):
+        if self.get("rewrite"):
             cmd.append("--merge")
+        if not self.get("check"):
+            cmd.append("--no-check")
         if self.get("ask_fake"):
             cmd.append("--fake")
         return cmd
