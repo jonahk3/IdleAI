@@ -112,7 +112,7 @@ location outlined), and this session's totals.
 <p align="center"><img src="docs/settings.png" alt="Settings: name, location, grid, models and the devices on your grid" width="860"></p>
 
 Your name, **device location** (search ~200 places), **grid name**, the models to download and
-share, *Merge with AI*, and **Find local grid devices** (every device on your grid with its
+share, *Merge with AI*, and **Find grid devices** (every device on your grid with its
 address, location and models). *Advanced* has extra IPs and Wi-Fi search. If you're hosting,
 changing a setting restarts hosting by itself.
 
@@ -204,7 +204,7 @@ The prompts given to the models (count, plan, helper, merge) are all in `peer/pr
 
 | Problem | Fix |
 |---|---|
-| A device isn't found | Is it hosting, on the **same grid name** and the same network? Press **Find local grid devices** in Settings, or run `python3 -m peer.check <its IP>`. University Wi-Fi often blocks devices from seeing each other: try a phone hotspot. |
+| A device isn't found | Is it hosting, on the **same grid name** and the same network? Press **Find grid devices** in Settings, or run `python3 -m peer.check <its IP>`. University Wi-Fi often blocks devices from seeing each other: try a phone hotspot. |
 | `Couldn't read/post to the grid` | The device can't reach ntfy.sh (no internet, or the Wi-Fi login page isn't done). Devices added under *Advanced > Extra IPs* still work. |
 | The firewall asks about Python | Allow it. On Windows tick **Private and Public** networks. |
 | My device did a part even though it's dirty | Check every device has a location set (Settings) and has run `git pull`. A device with no location counts as the dirtiest. |

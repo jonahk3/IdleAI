@@ -421,7 +421,7 @@ def index() -> None:
                          "exactly as written.").classes("text-xs opacity-60")
                 ui.label("Devices on your grid").classes("idle-caption mt-2")
                 with ui.row().classes("w-full items-center gap-3"):
-                    find_button = ui.button("Find local grid devices", icon="search", on_click=lambda: find_grid_devices()
+                    find_button = ui.button("Find grid devices", icon="search", on_click=lambda: find_grid_devices()
                                             ).props("unelevated no-caps color=primary")
                     grid_status = ui.label("Press the button to see which devices are on your grid right now."
                                            ).classes("text-xs opacity-60")
