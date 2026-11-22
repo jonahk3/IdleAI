@@ -35,15 +35,15 @@ It opens in its own window, like the simple window further down. (Without `pyweb
 your browser instead; `--browser` does that on purpose.) Closing the window also stops hosting.
 It runs exactly the same commands as the simple window, so everything in this README applies.
 
-- **Ask**: a chat. Pick the helpers' model, type a message (Ctrl+Enter sends), and add files
-  with the 📎 button. Idle splits the prompt across the devices on your grid automatically
-  (lowest-carbon electricity first) and replies with the final answer. *Details* under each reply
+- **Ask**: a chat, with your **chats listed down the right side** (*New chat* starts one; click a
+  chat to open it and keep adding to it). Type a message (Ctrl+Enter sends), add files with the 📎
+  button, and pick the helpers' model under the message box. Idle splits the prompt across the
+  devices on your grid automatically (lowest-carbon electricity first). *Details* under each reply
   shows which devices and models did the work, and the full log.
-  **Start hosting** shares this device's AI with your grid; **Server window** pops out its log,
-  which shows each task as it arrives and when it's finished and sent back.
+  **Start hosting** shares this device's AI with your grid; **Server window** pops out its log:
+  each task as it arrives, when it's finished and sent back, and the answer it sent.
 - **Your CO2 use**: how much CO2 this device emits per hour while running a model (from its
   location), how that compares with the cleanest and dirtiest provinces, and this session's totals.
-- **Chat history**: every past prompt and its answer.
 - **Settings**: your name, grid name (`general` by default; *New private grid* makes one for your
   team), device location, the models to download and share, and *Merge with AI*. *Advanced* has
   extra IPs and Wi-Fi search. If you're hosting, hosting restarts by itself to use new settings.

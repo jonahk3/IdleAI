@@ -95,6 +95,20 @@ def start_pull(model: str) -> bool:
     return True
 
 
+MAX_SHOWN_RESPONSE = 4000  # characters of each answer printed in the server window
+
+
+def show_response(text: str) -> None:
+    """Print the answer that was sent back (for debugging), indented under the task line."""
+    text = text.strip() or "(empty answer)"
+    if len(text) > MAX_SHOWN_RESPONSE:
+        text = text[:MAX_SHOWN_RESPONSE] + f"\n… ({len(text) - MAX_SHOWN_RESPONSE:,} more characters not shown)"
+    print("    ┌ Response sent:", flush=True)
+    for line in text.splitlines():
+        print(f"    │ {line}", flush=True)
+    print("    └", flush=True)
+
+
 def stream_fake(model: str, messages: list[dict]):
     """Pretend model, for testing the network without Ollama installed."""
     text = f"(fake {model}) You said: {messages[-1]['content']}"
@@ -215,8 +229,10 @@ class PeerHandler(BaseHTTPRequestHandler):
         usage: dict = {}
         pieces = stream_fake(model, messages) if self.fake else chat_stream(model, messages, usage=usage)
         try:
+            sent: list[str] = []
             for piece in pieces:
                 chars += len(piece)
+                sent.append(piece)
                 self.write_line({"token": piece})
             secs = round(time.time() - start, 1)
             if usage.get("seconds") is None:  # fake model, or Ollama didn't say
@@ -228,6 +244,7 @@ class PeerHandler(BaseHTTPRequestHandler):
                 log(f"{who}: the model started repeating itself, so its answer was cut off there")
             log(f"{who} <- reply done ({chars} chars, {secs}s)")
             log(f"✓ Task complete: answer sent back to {who} ({secs}s, {model})")
+            show_response("".join(sent))
             log(credits.line("earned", earned, f"{detail} for {who}"))
         except (BrokenPipeError, ConnectionResetError):
             log(f"{who} disconnected mid-reply")

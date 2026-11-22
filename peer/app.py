@@ -10,6 +10,7 @@ this device can reach it. Like peer.gui it runs the same commands you could type
 a clear view of where each part went, which model ran it, CO2 and credits.
 """
 import argparse
+import json
 import os
 import re
 import time
@@ -139,8 +140,51 @@ def chat_bubbles(prompt: str, attached: str, answer: str | None) -> None:
                 ui.markdown(answer)
 
 
+# ---------------------------------------------------------------- saved chats
+CHATS_DIR = PROJECT_DIR / "chats"   # one JSON file per chat (a chat can hold many prompts)
+conversation: list[dict] = []       # the open chat's turns: {"prompt", "attached", "answer", "meta", ...}
+current_chat: dict = {"id": None}   # which saved chat is open (None = a new one)
+
+
+def save_chat() -> None:
+    done = [t for t in conversation if t.get("answer") is not None]
+    if not done:
+        return
+    if not current_chat["id"]:
+        current_chat["id"] = time.strftime("%Y%m%d-%H%M%S")
+    keep = ("prompt", "attached", "answer", "meta", "details", "log", "results_file")
+    turns = [{k: (t.get(k)[-20000:] if k == "log" and t.get(k) else t.get(k)) for k in keep} for t in done]
+    CHATS_DIR.mkdir(exist_ok=True)
+    (CHATS_DIR / f"{current_chat['id']}.json").write_text(json.dumps(
+        {"id": current_chat["id"], "title": done[0]["prompt"][:60], "updated": time.time(), "turns": turns},
+        indent=1), encoding="utf-8")
+
+
+def saved_chats() -> list[dict]:
+    """Saved chats (newest first), then older single prompts that aren't part of a chat."""
+    chats = []
+    for f in CHATS_DIR.glob("*.json") if CHATS_DIR.is_dir() else []:
+        try:
+            chats.append(json.loads(f.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    chats.sort(key=lambda c: c.get("updated", 0), reverse=True)
+    in_chats = {t.get("results_file") for c in chats for t in c.get("turns", [])}
+    folder = PROJECT_DIR / RESULTS_DIR
+    for f in sorted(folder.glob("*.md"), reverse=True)[:100] if folder.is_dir() else []:
+        if f.name in in_chats:
+            continue
+        try:
+            you, attached, answer = parse_result(f.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        chats.append({"id": None, "file": f.name, "title": (you.splitlines() or [f.stem])[0][:60],
+                      "updated": f.stat().st_mtime,
+                      "turns": [{"prompt": you, "attached": attached, "answer": answer, "meta": ""}]})
+    return chats
+
+
 # ---------------------------------------------------------------- the page
-conversation: list[dict] = []   # this session's chat: {"prompt", "attached", "answer", "meta", "details", ...}
 
 
 @ui.page("/")
@@ -158,7 +202,6 @@ def index() -> None:
         with ui.tabs().classes("ml-6") as tabs:
             t_ask = ui.tab("Ask", icon="chat_bubble_outline")
             t_co2 = ui.tab("Your CO2 use", icon="eco")
-            t_hist = ui.tab("Chat history", icon="history")
             t_set = ui.tab("Settings", icon="settings")
         ui.space()
         ollama_badge = ui.label().classes("idle-pill text-xs")
@@ -179,52 +222,66 @@ def index() -> None:
                  "finished and the answer is sent back.").classes("text-xs opacity-60")
         host_feed = LogFeed(bridge.host, "h-[60vh]")
 
-    with ui.tab_panels(tabs, value=t_ask, animated=False).classes(f"w-full max-w-5xl mx-auto bg-[{PAPER}]"):
+    with ui.tab_panels(tabs, value=t_ask, animated=False).classes(f"w-full max-w-7xl bg-[{PAPER}]"):
 
-        # ================================================================ ASK (chat)
+        # ================================================================ ASK (chat + history)
         with ui.tab_panel(t_ask).classes("gap-3"):
-            with ui.row().classes("w-full items-center no-wrap gap-3"):
-                ui.label("Model").classes("idle-caption")
-                model_options = {m: f"{m}  ·  {'text + images' if i['images'] else 'text'}  ·  ~{i['size']}"
-                                 for m, i in MODELS.items()}
-                ui.select(model_options, value=s["model"],
-                          on_change=lambda e: (save("model", e.value), refresh_attachments())
-                          ).classes("w-80").props("outlined dense")
-                model_about = ui.label().classes("text-sm opacity-70")
-                ui.space()
-                host_button = ui.button(on_click=lambda: toggle_host()).props("unelevated no-caps")
-                ui.button("Server window", icon="open_in_new", on_click=lambda: server_dialog.open()
-                          ).props("outline no-caps color=dark")
-            ui.label(f"Prompts are split across your grid, lowest-carbon electricity first · planned by "
-                     f"{COORDINATOR_MODEL}. Hosting shares this device's AI with your grid.").classes("text-xs opacity-50")
+            with ui.row().classes("w-full no-wrap gap-4 items-start"):
+                # ----- the chat (left)
+                with ui.column().classes("grow gap-3 min-w-0"):
+                    with ui.row().classes("w-full items-center no-wrap gap-3"):
+                        host_button = ui.button(on_click=lambda: toggle_host()).props("unelevated no-caps").classes("shrink-0")
+                        ui.button("Server window", icon="open_in_new", on_click=lambda: server_dialog.open()
+                                  ).props("outline no-caps color=dark").classes("shrink-0")
+                        ui.label("Hosting shares this device's AI with your grid. Prompts are split across your "
+                                 "grid, lowest-carbon electricity first.").classes("text-xs opacity-50")
 
-            chat_scroll = ui.scroll_area().classes("w-full h-[56vh] idle-soft")
-            with chat_scroll:
-                chat_box = ui.column().classes("chat-box w-full gap-3 p-2")
+                    chat_scroll = ui.scroll_area().classes("w-full h-[58vh] idle-soft")
+                    with chat_scroll:
+                        chat_box = ui.column().classes("chat-box w-full gap-3 p-2")
 
-            # prompt bar: attachments + paperclip + text + send
-            with ui.card().classes("idle-card w-full gap-2"):
-                with ui.row().classes("w-full items-center gap-2") as chips_row:
-                    chips = ui.row().classes("gap-2")
-                    attach_warning = ui.label().classes("text-sm text-red-700")
-                    pdf_button = ui.button("Install PDF support", icon="download",
-                                           on_click=lambda: install_pdf()).props("outline dense no-caps")
-                uploader = ui.upload(multiple=True, auto_upload=True, on_upload=lambda e: on_upload(e)
-                                     ).style("position:absolute; width:1px; height:1px; opacity:0; overflow:hidden")
-                # (invisible: the paperclip button below opens its file picker)
-                with ui.row().classes("w-full items-end no-wrap gap-2"):
-                    # Opens the file picker right in the page: browsers only allow that directly from a click.
-                    ui.button(icon="attach_file").props("flat round color=dark").tooltip(
-                        "Add files (PDF, images, text)").on(
-                        "click", js_handler=f'() => document.querySelector("#{uploader.html_id} input[type=file]").click()')
-                    prompt = ui.textarea(placeholder="Message Idle…  (Ctrl+Enter to send)"
-                                         ).classes("grow text-base").props("borderless autogrow")
-                    prompt.on("keydown.ctrl.enter", lambda: send())
-                    prompt.on("keydown.meta.enter", lambda: send())
-                    stop_button = ui.button(icon="stop", on_click=lambda: bridge.ask.stop()
-                                            ).props("round unelevated color=negative").tooltip("Stop")
-                    send_button = ui.button(icon="arrow_upward", on_click=lambda: send()
-                                            ).props("round unelevated color=dark").tooltip("Send")
+                    # prompt bar: attachments + paperclip + text + send, then the model picker
+                    with ui.card().classes("idle-card w-full gap-2"):
+                        with ui.row().classes("w-full items-center gap-2") as chips_row:
+                            chips = ui.row().classes("gap-2")
+                            attach_warning = ui.label().classes("text-sm text-red-700")
+                            pdf_button = ui.button("Install PDF support", icon="download",
+                                                   on_click=lambda: install_pdf()).props("outline dense no-caps")
+                        uploader = ui.upload(multiple=True, auto_upload=True, on_upload=lambda e: on_upload(e)
+                                             ).style("position:absolute; width:1px; height:1px; opacity:0; overflow:hidden")
+                        # (invisible: the paperclip button below opens its file picker)
+                        with ui.row().classes("w-full items-end no-wrap gap-2"):
+                            # Opens the file picker right in the page: browsers only allow that directly from a click.
+                            ui.button(icon="attach_file").props("flat round color=dark").tooltip(
+                                "Add files (PDF, images, text)").on(
+                                "click", js_handler=f'() => document.querySelector("#{uploader.html_id} input[type=file]").click()')
+                            prompt = ui.textarea(placeholder="Message Idle…  (Ctrl+Enter to send)"
+                                                 ).classes("grow text-base").props("borderless autogrow")
+                            prompt.on("keydown.ctrl.enter", lambda: send())
+                            prompt.on("keydown.meta.enter", lambda: send())
+                            stop_button = ui.button(icon="stop", on_click=lambda: bridge.ask.stop()
+                                                    ).props("round unelevated color=negative").tooltip("Stop")
+                            send_button = ui.button(icon="arrow_upward", on_click=lambda: send()
+                                                    ).props("round unelevated color=dark").tooltip("Send")
+                        with ui.row().classes("w-full items-center no-wrap gap-2"):
+                            ui.label("Model").classes("idle-caption")
+                            model_options = {m: f"{m}  ·  {'text + images' if i['images'] else 'text'}  ·  ~{i['size']}"
+                                             for m, i in MODELS.items()}
+                            ui.select(model_options, value=s["model"],
+                                      on_change=lambda e: (save("model", e.value), refresh_attachments())
+                                      ).classes("w-72").props("outlined dense")
+                            model_about = ui.label().classes("text-xs opacity-60")
+                            ui.space()
+                            ui.label(f"planned by {COORDINATOR_MODEL}").classes("text-xs opacity-40")
+
+                # ----- chat history (right side)
+                with ui.card().classes("idle-card w-72 shrink-0 gap-2"):
+                    with ui.row().classes("w-full items-center"):
+                        ui.label("Chats").classes("idle-caption")
+                        ui.space()
+                        ui.button("New chat", icon="add", on_click=lambda: new_chat()).props("flat dense no-caps color=dark")
+                    with ui.scroll_area().classes("w-full h-[70vh]"):
+                        history_list = ui.column().classes("w-full gap-1")
 
         # ================================================================ YOUR CO2 USE
         with ui.tab_panel(t_co2).classes("gap-4"):
@@ -304,20 +361,6 @@ def index() -> None:
                     ui.switch("Also search the Wi-Fi", value=s["search_wifi"], on_change=lambda e: save("search_wifi", e.value))
                     status_line = ui.label().classes("text-sm opacity-70")
 
-        # ================================================================ CHAT HISTORY
-        with ui.tab_panel(t_hist).classes("gap-4"):
-            with ui.row().classes("w-full no-wrap gap-4 items-start"):
-                with ui.card().classes("idle-card w-72 shrink-0"):
-                    with ui.row().classes("w-full items-center"):
-                        ui.label("Past chats").classes("idle-caption")
-                        ui.space()
-                        ui.button(icon="refresh", on_click=lambda: list_results()).props("flat dense round")
-                    results_list = ui.column().classes("w-full gap-0")
-                with ui.card().classes("idle-soft grow"):
-                    history_view = ui.column().classes("w-full gap-3")
-                    with history_view:
-                        ui.label("Pick a chat on the left.").classes("opacity-60")
-
     # ---------------------------------------------------------------- chat
     live = {"status": None}  # the "working…" label of the message being answered
 
@@ -379,6 +422,8 @@ def index() -> None:
             meta.append(f"~{co2['grams']:.3f} g CO2")
         if spent:
             meta.append(f"{float(spent.group(1)):.2f} credits")
+        saved = re.search(r"Saved to (\S+\.md)", output)
+        turn["results_file"] = Path(saved.group(1).replace("\\", "/")).name if saved else None
         turn.update(answer=answer, meta=" · ".join(meta),
                     details=[f"{st['step']}: {st['device']} · {st['model']}"
                              + (f" · {where[st['step']]['location']} ({where[st['step']]['g_co2_per_kwh']:g} g/kWh)"
@@ -387,7 +432,8 @@ def index() -> None:
         for file_id in turn.get("file_ids", []):  # attachments go with one message only
             bridge.remove_file(file_id)
         refresh_attachments()
-        list_results()
+        save_chat()
+        list_history()
         render_chat()
 
     def send() -> None:
@@ -481,31 +527,46 @@ def index() -> None:
             changed("room", name)
             ui.notify(f"Now on grid '{name}'")
 
-    # ---------------------------------------------------------------- history
-    def show_result(file: Path) -> None:
-        you, attached, answer = parse_result(file.read_text(encoding="utf-8"))
-        history_view.clear()
-        with history_view:
-            ui.label(time.strftime("%d %b %Y, %H:%M", time.strptime(file.stem, "%Y%m%d-%H%M%S"))
-                     if re.fullmatch(r"\d{8}-\d{6}", file.stem) else file.stem).classes("idle-caption")
-            chat_bubbles(you, attached, answer)
-
-    def list_results() -> None:
-        results_list.clear()
-        folder = PROJECT_DIR / RESULTS_DIR
-        files = sorted(folder.glob("*.md"), reverse=True)[:60] if folder.is_dir() else []
-        with results_list:
-            if not files:
+    # ---------------------------------------------------------------- history (right side)
+    def list_history() -> None:
+        history_list.clear()
+        chats = saved_chats()
+        with history_list:
+            if not chats:
                 ui.label("No chats yet.").classes("text-sm opacity-60")
-            for f in files:
-                try:
-                    title = parse_result(f.read_text(encoding="utf-8"))[0].splitlines()[0][:40] or f.stem
-                except (OSError, IndexError):
-                    title = f.stem
-                with ui.button(on_click=lambda f=f: show_result(f)).props("flat no-caps align=left").classes("w-full"):
-                    with ui.column().classes("gap-0 items-start"):
-                        ui.label(title).classes("text-sm text-left")
-                        ui.label(f.stem).classes("text-xs opacity-50")
+            for chat in chats:
+                is_open = chat.get("id") and chat.get("id") == current_chat["id"]
+                when = time.strftime("%d %b, %H:%M", time.localtime(chat.get("updated", 0)))
+                n = len(chat.get("turns", []))
+                with ui.button(on_click=lambda c=chat: open_chat(c)).props("flat no-caps align=left").classes(
+                        "w-full" + (f" bg-[{MINT}]" if is_open else "")):
+                    with ui.column().classes("gap-0 items-start w-full"):
+                        ui.label(chat.get("title") or "(untitled)").classes("text-sm text-left leading-tight")
+                        ui.label(f"{when}" + (f" · {n} messages" if n > 1 else "")).classes("text-xs opacity-50")
+
+    def open_chat(chat: dict) -> None:
+        if bridge.ask.running:
+            ui.notify("Wait for the current answer first (or press Stop)", type="warning")
+            return
+        conversation[:] = [dict(t) for t in chat.get("turns", [])]
+        # A single prompt saved before chats existed becomes a chat once you add to it.
+        current_chat["id"] = chat.get("id")
+        if not chat.get("id") and chat.get("file"):
+            current_chat["id"] = Path(chat["file"]).stem
+            for t in conversation:
+                t["results_file"] = chat["file"]
+        render_chat()
+        list_history()
+
+    def new_chat() -> None:
+        if bridge.ask.running:
+            ui.notify("Wait for the current answer first (or press Stop)", type="warning")
+            return
+        conversation.clear()
+        current_chat["id"] = None
+        render_chat()
+        list_history()
+        prompt.run_method("focus")
 
     # ---------------------------------------------------------------- your CO2 use
     drawn: dict = {}
@@ -581,7 +642,7 @@ def index() -> None:
 
     render_chat()
     refresh_attachments()
-    list_results()
+    list_history()
     tick()
     ui.timer(1.0, tick)
 
