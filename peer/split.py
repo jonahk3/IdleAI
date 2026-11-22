@@ -121,7 +121,7 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
     me = {local_ip(), "127.0.0.1"}
     if room:
         listed = [d for d in lookup(room) if d["ip"] not in me]
-        log(f"Room '{room}': {len(listed)} other laptop(s) listed")
+        log(f"Network '{room}': {len(listed)} other laptop(s) listed")
         candidates += [(d["ip"], d["port"]) for d in listed]
     if use_discovery and not candidates:
         log("Looking for other laptops on the Wi-Fi...")
@@ -296,23 +296,15 @@ def combine(local: LocalDevice, model: str, task: str, parts: list[PartResult], 
     return local.run(model, messages, options={"temperature": 0}).strip()
 
 
-def save(task: str, model: str, workers: list[Device], parts: list[PartResult],
-         final: str, total_seconds: float, attached: list[str]) -> Path:
+def save(task: str, final: str, attached: list[str]) -> Path:
+    """Save the conversation like a chat: your prompt and the final answer only."""
     out_dir = Path(RESULTS_DIR)
     out_dir.mkdir(exist_ok=True)
     path = out_dir / f"{time.strftime('%Y%m%d-%H%M%S')}.md"
-    lines = [
-        "# Result", "", f"**Prompt:** {task}", "",
-        *([f"**Attached:** {', '.join(attached)}", ""] if attached else []),
-        f"**Helper model:** {model} · **Planned/combined by:** {COORDINATOR_MODEL} · **Laptops used:** {', '.join(d.name for d in workers)} · "
-        f"**Total time:** {total_seconds}s", "", "## Final answer", "", final, "", "## Parts", "",
-    ]
-    for p in parts:
-        cost = f", {p.credits:.3f} credits" if p.credit_detail else ""
-        cost += f", {carbon.label(p.location)}, ~{p.co2_grams:.3f} g CO2"
-        lines += [f"### Part {p.index + 1} — {p.device}, {p.model} ({p.seconds}s{cost})", "", f"*{p.instruction}*", ""]
-        lines += [f"> note: {n}" for n in p.notes] + ([""] if p.notes else [])
-        lines += [p.text, ""]
+    lines = ["**You:**", "", task, ""]
+    if attached:
+        lines += [f"*Attached: {', '.join(attached)}*", ""]
+    lines += ["**Idle:**", "", final, ""]
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
 
@@ -330,9 +322,9 @@ def main() -> None:
     parser.add_argument("--file", nargs="*", default=[], help="files or images to attach to the prompt")
     parser.add_argument("--peers", nargs="*", default=[], help="extra peer IPs, e.g. 192.168.1.42")
     parser.add_argument("--no-discover", action="store_true", help="only use --peers, don't search the Wi-Fi")
-    parser.add_argument("--fake", action="store_true", help="this laptop pretends to have a model (testing)")
+    parser.add_argument("--fake", action="store_true", help=argparse.SUPPRESS)  # developer testing only
     parser.add_argument("--forget", action="store_true", help="forget saved laptops (known_peers.json)")
-    parser.add_argument("--room", help="room name to find laptops in (remembered)")
+    parser.add_argument("--room", help="network name to find laptops in (remembered; default: general)")
     parser.add_argument("--list", action="store_true", help="just list the laptops that can be used, then exit")
     args = parser.parse_args()
     room = resolve_room(args.room)
@@ -423,17 +415,13 @@ def main() -> None:
         final = parts[0].text
 
     total_secs = round(time.time() - t0, 1)
-    path = save(prompt, args.model, workers, parts, final, total_secs, att.names())
+    path = save(prompt, final, att.names())
 
-    print("\n" + "=" * 70)
-    for p in parts:
-        print(f"\n## Part {p.index + 1} — by {p.device} using {p.model} ({p.seconds}s)\n{p.instruction}\n")
-        print(p.text)
     print("\n" + "=" * 70 + "\n## Final answer\n")
     print(final)
     print("\n" + "=" * 70)
     spent = sum(p.credits for p in parts)
-    log(f"Credits for this prompt: {spent:.3f} spent on helpers (work on this laptop is free)")
+    log(f"Credits for this prompt: {spent:.2f} spent on helpers (work on this laptop is free)")
     grams = sum(p.co2_grams for p in parts)
     worst = max(carbon.intensity(d.location) for d in devices)
     worst_grams = sum(p.co2_grams / max(carbon.intensity(p.location), 1e-9) * worst for p in parts)

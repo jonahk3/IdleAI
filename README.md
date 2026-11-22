@@ -21,8 +21,8 @@ Both laptops can run **both** pieces at the same time, so each can use the other
 
 ## The Idle app (recommended)
 
-A modern desktop window in the Idle colours for everything below: asking, hosting, rooms,
-locations, finding/checking laptops, attachments, results, credits and CO2.
+A modern desktop window in the Idle colours for everything below: chatting, hosting, network
+names, locations, finding/checking laptops, attachments, chat history, credits and CO2.
 
 ```bash
 python3 -m pip install nicegui pywebview
@@ -35,14 +35,14 @@ It opens in its own window, like the simple window further down. (Without `pyweb
 your browser instead; `--browser` does that on purpose.) Closing the window also stops hosting.
 It runs exactly the same commands as the simple window, so everything in this README applies.
 
-- **Ask**: pick the helpers' model, *Split across laptops* or *Just one laptop*, drop in files,
-  type a prompt and press **Send** (Ctrl+Enter). The run view shows each step (plan, parts,
-  combine) with the laptop, the model, and the laptop's grid (g CO2/kWh), then the answer and
-  the CO2 estimate. *Show log* has the full output.
+- **Ask**: a chat. Pick the helpers' model, type a message (Ctrl+Enter sends), and add files
+  with the 📎 button. Idle splits the prompt across the laptops on your network automatically
+  (cleanest grids first) and replies with the final answer. *Details* under each reply shows
+  which laptops and models did the work, and the full log.
 - **Host**: your name, the models to download and share, **Start hosting**, and the server log.
-- **Network**: room, your location, the grid-intensity chart, extra IPs, *Find laptops*, and
-  *Check a laptop* (explains why one can't be reached).
-- **Results**: every saved answer.
+- **Network**: your network name (`general` by default), your location, the grid-intensity
+  chart, extra IPs, *Find laptops*, and *Check a laptop* (explains why one can't be reached).
+- **Chat history**: every past prompt and its answer.
 - The header shows your **credits** (this session), whether you're hosting, and whether Ollama runs.
 
 ## Simple window (no install)
@@ -53,10 +53,10 @@ python3 -m peer.gui
 
 - **Top toggle:** *Ask* (send prompts) or *Host* (share my model). Hosting keeps running
   while you switch to Ask, so one laptop can do both.
-- **Room:** type your team's room (or press *New room*). It's remembered.
+- **Network name:** `general` by default; type another (or press *New network*) for a private one. It's remembered.
 - **Host:** enter your name, press *Start hosting*.
-- **Ask:** choose *Split across all laptops* or *Just one laptop* (press *Find laptops* to fill
-  the list), type a prompt at the bottom and press **Send** (or Ctrl+Enter).
+- **Ask:** type a prompt at the bottom and press **Send** (or Ctrl+Enter). It's split across the
+  laptops automatically.
 
 The window just runs the same commands described below; it shows each one in blue
 (`$ python -m ...`), so you can copy it into a terminal. Settings are saved in `gui_settings.json`.
@@ -107,7 +107,7 @@ download fails. The list lives in `peer/config.py` (`MODELS`).
 ## Carbon-aware routing
 
 Every laptop picks its **location** (GUI: *Location* in the settings; terminal: `--location QC`
-for both `peer.server` and `peer.split`). Locations are fake for now; the grid carbon intensity
+for both `peer.server` and `peer.split`). Locations are sample data for now; the grid carbon intensity
 of each province/territory is in `peer/provinces.json` (approximate, from Canada's National
 Inventory Report). Replace it with live data later by changing only `peer/carbon.py`.
 
@@ -129,7 +129,7 @@ The server normally uses port 8765. If that port is taken when it starts:
   server takes 8765 back. Only processes whose command line contains `peer.server` are closed.
 - another program has it: the new server uses the next free port.
 
-Teammates in your room find the new port automatically; the server window also prints the address
+Teammates on your network find the new port automatically; the server window also prints the address
 to type (e.g. `10.0.0.5:8770`).
 
 ## Credits
@@ -139,8 +139,8 @@ A simple tracker for now (later it will be tied to an account):
 - **Asking spends** credits for every part a teammate's laptop answers for you. Work done on your
   own laptop (planning, combining, your own part) is free.
 - The amount is based on **tokens** (what the model read + wrote, reported by Ollama):
-  1 credit per 1,000 tokens. If a model doesn't report tokens, **compute time** is used instead:
-  3 credits per minute. Both rates are in `peer/config.py`; the maths is in `peer/credits.py`,
+  100 credits per 1,000 tokens. If a model doesn't report tokens, **compute time** is used instead:
+  300 credits per minute. Every session **starts with 500 credits**. Both rates are in `peer/config.py`; the maths is in `peer/credits.py`,
   which host and asker share, so both sides always agree on the amount.
 - The tools print `[credits] earned/spent ...` lines (green in the GUI). The GUI adds them up
   under the top bar. It **starts at 0 every time the GUI opens**, can go negative, and doesn't
@@ -216,7 +216,7 @@ python3 -m peer.split "Write a beginner's guide to composting"
 
 What happens (the prompts for each step are in `peer/prompts.py`):
 
-1. **Find** the other laptops (room, remembered laptops, or the Wi-Fi).
+1. **Find** the other laptops (network name, remembered laptops, or the Wi-Fi).
 2. **Plan**: first *your* laptop's coordinator model (`llama3.2:3b`) counts how many independent
    pieces the task has (without being told how many laptops exist); code uses that many laptops at
    most. Then it writes exactly that many complete instructions, one per helper laptop, each producing a
@@ -227,7 +227,7 @@ What happens (the prompts for each step are in `peer/prompts.py`):
 4. **Combine**: the coordinator model writes the final answer from the helpers' answers (fixing numbering,
    duplicates and gaps).
 
-Results are shown and saved to `results/<date-time>.md`.
+The final answer is shown and saved, chat-style (your prompt + the answer), to `results/<date-time>.md`.
 
 This works best for **batch** tasks: lists, sets of items, rows to process, several
 independent questions.
@@ -253,44 +253,28 @@ Options:
 
 The laptop running `peer.split` needs Ollama + the model too, because it does the planning.
 
-## 5. Rooms: find each other without typing IPs (university Wi-Fi)
+## 5. Network names: find each other without typing IPs (university Wi-Fi)
 
-University Wi-Fi blocks the automatic search. Instead, every laptop posts its address to a
-shared **room** on [ntfy.sh](https://ntfy.sh) (a free public message board, no account), and
-`peer.split` reads the room.
+University Wi-Fi blocks the automatic search. Instead, every laptop posts its address under a shared
+**network name** on [ntfy.sh](https://ntfy.sh) (a free public message board, no account), and
+`peer.split` reads it.
 
-1. **One person** makes a room (a random name), and sends it to the team **privately**
-   (group chat, *not* the public repo, since anyone with the name can read and post):
-   ```bash
-   python3 -m peer.room
-   ```
-2. **Every helper laptop** starts its server with the room:
-   ```bash
-   python3 -m peer.server --name bob --room idle-1a2b3c4d5e6f
-   ```
-   It should print `Posted to room ...: bob is at 10.x.x.x:8765`.
-3. **The asking laptop** runs split with the room:
-   ```bash
-   python3 -m peer.split "your prompt" --room idle-1a2b3c4d5e6f
-   ```
+- Everyone starts on the network **`general`**, so laptops find each other with no setup.
+- For a private network just for your team, make a name and share it **privately**
+  (anyone who knows the name can use your laptops):
+  ```bash
+  python3 -m peer.room
+  ```
+  Then use it everywhere: in the apps (*Network name*), or `--room <name>` in the terminal
+  (`peer.server` and `peer.split`). It's remembered in `room.txt`.
 
-The room name is saved in `room.txt`, so after the first time you can leave out `--room`.
-Servers re-post their address automatically if it changes. Give each laptop a different `--name`.
+Servers re-post their address automatically if it changes. Give each laptop a different name.
+Only private network addresses (like `10.x`) are used, so someone who learns the network name
+can't redirect your prompts to a server on the internet.
 
-Safety: only private network addresses (like `10.x`) from the room are used, so someone
-who learns the room name can't redirect your prompts to a server on the internet.
+## Testing on one laptop
 
-## Testing without Ollama
-
-To check the network connection before Ollama is installed, run the server with a fake
-model that just echoes what you type:
-
-```bash
-python3 -m peer.server --name bob --fake
-```
-
-You can also test everything on one laptop. Run the server in one terminal and
-`python3 -m peer.chat --peer localhost` in another.
+Run the server in one terminal and `python3 -m peer.chat --peer localhost` in another.
 
 ## Troubleshooting
 
@@ -302,8 +286,8 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `Models shared: (none ...)` | Ollama isn't running on the server laptop, or the model isn't downloaded yet. Run `ollama pull llama3.2:3b` there. |
 | `model '...' is not allowed` | Only models in `peer/config.py` → `MODEL_ALLOWLIST` can run. |
 | `peer.split` only finds "this laptop" | Auto-find only checks addresses that share your first three numbers (e.g. `10.0.3.x`). Big networks put laptops on different ones. Run once with `--peers <their IP>` and it's remembered. |
-| `Couldn't read/post to room` | The laptop can't reach ntfy.sh (no internet, or the Wi-Fi login page isn't done). Open a browser to check. Remembered laptops and `--peers` still work. |
-| Room lists a laptop but it's skipped | Its server stopped, or its address changed and it hasn't re-posted yet (it checks every 30 s). |
+| `Couldn't read/post to the network` | The laptop can't reach ntfy.sh (no internet, or the Wi-Fi login page isn't done). Open a browser to check. Remembered laptops and `--peers` still work. |
+| The network lists a laptop but it's skipped | Its server stopped, or its address changed and it hasn't re-posted yet (it checks every 30 s). |
 | Wrong IP printed | Find it yourself. Mac: `ipconfig getifaddr en0`. Windows: `ipconfig`, then look for "IPv4 Address". |
 
 ## Safety
@@ -333,7 +317,7 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `peer/carbon.py` + `peer/provinces.json` | Grid CO2 per kWh by province, used to send parts to the cleanest laptops |
 | `peer/check.py` | `python -m peer.check IP`: explains why a laptop can't be reached |
 | `peer/credits.py` | How many credits a piece of work costs/earns (tokens, or compute time) |
-| `peer/room.py` | Rooms: posts/reads laptop addresses on ntfy.sh so peers find each other |
+| `peer/room.py` | Network names: posts/reads laptop addresses on ntfy.sh so peers find each other |
 | `peer/discovery.py` | Finds other laptops on the Wi-Fi (UDP broadcast on port 8766) |
 | `peer/ollama.py` | Talks to the Ollama on this laptop |
 

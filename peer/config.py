@@ -51,7 +51,8 @@ KNOWN_PEERS_FILE = "known_peers.json"
 # "Room" meeting point: laptops post their address here so peers can find them
 # on networks that block discovery (e.g. university Wi-Fi). Free, no account.
 ROOM_SERVICE_URL = os.environ.get("IDLE_ROOM_SERVICE", "https://ntfy.sh")
-ROOM_FILE = "room.txt"          # your room name is remembered here (never commit it)
+ROOM_FILE = "room.txt"          # your network name is remembered here (never commit it)
+DEFAULT_NETWORK = "general"     # the network everyone joins unless they pick another name
 ROOM_ANNOUNCE_EVERY = 60 * 60   # re-post our address at least this often (seconds)
 
 # The most tokens the planner may write. A plan is a few short instructions; this stops
@@ -60,8 +61,9 @@ PLANNER_MAX_TOKENS = 800
 
 # Credits (a tracker only for now: balances can go negative and nothing is blocked).
 # Answering a teammate's request EARNS credits; having a teammate answer yours SPENDS them.
-CREDITS_PER_1000_TOKENS = 1.0   # tokens = what the model read (input) + what it wrote (output)
-CREDITS_PER_MINUTE = 3.0        # used instead when a model doesn't report token counts
+CREDITS_PER_1000_TOKENS = 100.0  # tokens = what the model read (input) + what it wrote (output)
+CREDITS_PER_MINUTE = 300.0       # used instead when a model doesn't report token counts
+STARTING_CREDITS = 500.0         # every session starts with this balance (until accounts exist)
 
 # Carbon-aware routing: parts go to the laptops on the cleanest power grids first.
 # Locations are fake for now (each laptop picks one); data is in peer/provinces.json.

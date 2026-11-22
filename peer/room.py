@@ -19,10 +19,15 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from peer.config import ROOM_ANNOUNCE_EVERY, ROOM_FILE, ROOM_SERVICE_URL
+from peer.config import DEFAULT_NETWORK, ROOM_ANNOUNCE_EVERY, ROOM_FILE, ROOM_SERVICE_URL
 from peer.discovery import local_ip
 
-ROOM_PATTERN = re.compile(r"^[a-z0-9_-]{8,64}$")
+ROOM_PATTERN = re.compile(r"^[a-z0-9_-]{3,64}$")
+TOPIC_PREFIX = "idle-net-"  # ntfy topic = prefix + network name, so "general" doesn't clash with other apps
+
+
+def topic(room: str) -> str:
+    return TOPIC_PREFIX + room
 
 # Short, common, easy-to-spell words for room names like "maple-otter-river-42".
 WORDS = """
@@ -57,26 +62,25 @@ def new_room_name() -> str:
     return "-".join(words) + f"-{secrets.randbelow(90) + 10}"
 
 
-def resolve_room(cli_value: str | None) -> str | None:
-    """Room from --room (and remember it), else the one saved in room.txt."""
+def resolve_room(cli_value: str | None) -> str:
+    """Network name from --room (and remember it), else the saved one, else "general"."""
     if cli_value:
         cli_value = normalize_room(cli_value)
         if not ROOM_PATTERN.match(cli_value):
-            raise SystemExit("Room names must be 8-64 letters, numbers or dashes (try: python -m peer.room)")
+            raise SystemExit("Network names must be 3-64 letters, numbers or dashes (try: python -m peer.room)")
         Path(ROOM_FILE).write_text(cli_value + "\n")
         return cli_value
     try:
-        saved = Path(ROOM_FILE).read_text().strip()
+        saved = normalize_room(Path(ROOM_FILE).read_text())
     except OSError:
-        return None
-    saved = normalize_room(saved)
-    return saved if ROOM_PATTERN.match(saved) else None
+        saved = ""
+    return saved if ROOM_PATTERN.match(saved) else DEFAULT_NETWORK
 
 
 # ---------------------------------------------------------------- posting
 def announce(room: str, name: str, ip: str, port: int) -> None:
     body = json.dumps({"name": name, "ip": ip, "port": port, "v": 1}).encode()
-    req = urllib.request.Request(f"{ROOM_SERVICE_URL}/{room}", data=body, method="POST")
+    req = urllib.request.Request(f"{ROOM_SERVICE_URL}/{topic(room)}", data=body, method="POST")
     with urllib.request.urlopen(req, timeout=10):
         pass
 
@@ -91,10 +95,10 @@ def start_announcer(room: str, name: str, port: int) -> None:
             if ip != "127.0.0.1" and (ip != last_ip or time.time() - last_post > ROOM_ANNOUNCE_EVERY):
                 try:
                     announce(room, name, ip, port)
-                    log(f"Posted to room '{room}': {name} is at {ip}:{port}")
+                    log(f"Posted to network '{room}': {name} is at {ip}:{port}")
                     last_ip, last_post = ip, time.time()
                 except (urllib.error.URLError, OSError) as e:
-                    log(f"Couldn't post to room (will retry): {e}")
+                    log(f"Couldn't post to the network (will retry): {e}")
             time.sleep(30)
 
     threading.Thread(target=loop, daemon=True).start()
@@ -114,12 +118,12 @@ def _is_lan_address(ip: str) -> bool:
 
 def lookup(room: str) -> list[dict]:
     """Return [{"ip", "port", "name"}, ...] posted in the last 12 hours (newest per name)."""
-    url = f"{ROOM_SERVICE_URL}/{room}/json?poll=1&since=12h"
+    url = f"{ROOM_SERVICE_URL}/{topic(room)}/json?poll=1&since=12h"
     try:
         with urllib.request.urlopen(url, timeout=10) as resp:
             lines = resp.read().decode().splitlines()
     except (urllib.error.URLError, OSError) as e:
-        log(f"Couldn't read room '{room}': {e}")
+        log(f"Couldn't read network '{room}': {e}")
         return []
 
     latest: dict[str, dict] = {}
@@ -140,7 +144,7 @@ def lookup(room: str) -> list[dict]:
 def main() -> None:
     room = new_room_name()
     Path(ROOM_FILE).write_text(room + "\n")
-    print(f"New room: {room}")
+    print(f"New network name: {room}")
     print(f"Saved to {ROOM_FILE}. Send this name privately to your teammates (not in the public repo!).")
     print(f"They run:  python -m peer.server --name THEIR_NAME --room {room}")
 

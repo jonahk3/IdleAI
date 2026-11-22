@@ -23,7 +23,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from peer.config import COORDINATOR_MODEL, DEFAULT_MODEL, IMAGE_EXTENSIONS, MODEL_ALLOWLIST, MODELS, RESULTS_DIR, ROOM_FILE
+from peer.config import STARTING_CREDITS, COORDINATOR_MODEL, DEFAULT_MODEL, IMAGE_EXTENSIONS, MODEL_ALLOWLIST, MODELS, RESULTS_DIR, ROOM_FILE
 from peer import attachments, carbon
 from peer.room import new_room_name
 from peer.settings import DEFAULTS, PROJECT_DIR, load_settings, save_settings
@@ -161,10 +161,10 @@ class IdleApp:
 
         shared = ttk.LabelFrame(self.root, text="Settings (used by both modes)", padding=8)
         shared.pack(fill="x", padx=10, pady=8)
-        ttk.Label(shared, text="Room:").grid(row=0, column=0, sticky="w")
+        ttk.Label(shared, text="Network name:").grid(row=0, column=0, sticky="w")
         ttk.Entry(shared, textvariable=self.v["room"], width=32).grid(row=0, column=1, sticky="we", padx=4)
-        ttk.Button(shared, text="New room", command=self.new_room).grid(row=0, column=2)
-        ttk.Label(shared, text="Everyone uses the same room name. Leave it empty to use IPs instead.",
+        ttk.Button(shared, text="New network", command=self.new_room).grid(row=0, column=2)
+        ttk.Label(shared, text="Everyone on the same network name can use each other's laptops ('general' by default).",
                   foreground="gray").grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
         ttk.Label(shared, text="Location:").grid(row=2, column=0, sticky="w", pady=(8, 0))
         self.location_names = {f"{code} - {info['name']} ({info['g_co2_per_kwh']} g CO2/kWh)": code
@@ -175,7 +175,7 @@ class IdleApp:
         self.location_box.set(current)
         self.location_box.bind("<<ComboboxSelected>>",
                                lambda e: self.v["location"].set(self.location_names[self.location_box.get()]))
-        ttk.Label(shared, text="fake for now · parts go to the cleanest grids first",
+        ttk.Label(shared, text="sample data for now · parts go to the cleanest grids first",
                   foreground="gray").grid(row=2, column=2, sticky="w", pady=(8, 0))
         shared.columnconfigure(1, weight=1)
 
@@ -199,8 +199,6 @@ class IdleApp:
         row.pack(fill="x")
         ttk.Label(row, text="Your name:").pack(side="left")
         ttk.Entry(row, textvariable=self.v["host_name"], width=20).pack(side="left", padx=4)
-        ttk.Checkbutton(row, text="Fake model (testing, no Ollama)",
-                        variable=self.v["host_fake"]).pack(side="left", padx=12)
         self.host_button = ttk.Button(row, text="Start hosting", command=self.toggle_host)
         self.host_button.pack(side="right")
         models = ttk.LabelFrame(f, text="Models to download (if needed) and share", padding=8)
@@ -229,24 +227,15 @@ class IdleApp:
                           f"{COORDINATOR_MODEL} on this laptop. Missing models download automatically.",
                   foreground="gray", wraplength=800, justify="left").pack(anchor="w")
 
-        how = ttk.LabelFrame(f, text="How to send the prompt", padding=8)
+        how = ttk.LabelFrame(f, text="Finding laptops (prompts are split and routed automatically)", padding=8)
         how.pack(fill="x")
-        ttk.Radiobutton(how, text="Split across all laptops", value="split",
-                        variable=self.v["send_mode"]).grid(row=0, column=0, sticky="w")
         ttk.Checkbutton(how, text="Also search the Wi-Fi",
-                        variable=self.v["search_wifi"]).grid(row=0, column=1, sticky="w", padx=12)
-        ttk.Radiobutton(how, text="Just one laptop:", value="one",
-                        variable=self.v["send_mode"]).grid(row=1, column=0, sticky="w", pady=(6, 0))
-        self.peer_box = ttk.Combobox(how, textvariable=self.v["one_peer"], width=34)
-        self.peer_box.grid(row=1, column=1, columnspan=2, sticky="we", padx=12, pady=(6, 0))
-        ttk.Button(how, text="Find laptops", command=self.find_peers).grid(row=1, column=3, pady=(6, 0))
-
-        ttk.Label(how, text="Extra IPs:").grid(row=2, column=0, sticky="w", pady=(6, 0))
+                        variable=self.v["search_wifi"]).grid(row=0, column=0, sticky="w")
+        ttk.Button(how, text="Find laptops", command=self.find_peers).grid(row=0, column=3)
+        ttk.Label(how, text="Extra IPs:").grid(row=1, column=0, sticky="w", pady=(6, 0))
         ttk.Entry(how, textvariable=self.v["extra_peers"]).grid(
-            row=2, column=1, columnspan=2, sticky="we", padx=12, pady=(6, 0))
-        ttk.Button(how, text="Check laptop", command=self.check_peer).grid(row=2, column=3, pady=(6, 0))
-        ttk.Checkbutton(how, text="Fake model (testing)",
-                        variable=self.v["ask_fake"]).grid(row=0, column=3, sticky="w")
+            row=1, column=1, columnspan=2, sticky="we", padx=12, pady=(6, 0))
+        ttk.Button(how, text="Check laptop", command=self.check_peer).grid(row=1, column=3, pady=(6, 0))
         how.columnconfigure(2, weight=1)
 
         files = ttk.Frame(f)
@@ -317,9 +306,9 @@ class IdleApp:
         runner.credit_pos = max(runner.credit_pos, end)
 
     def refresh_credits(self) -> None:
-        balance = self.earned - self.spent
+        balance = STARTING_CREDITS + self.earned - self.spent
         self.credits_label.configure(
-            text=f"Credits: {balance:+.3f}   (earned {self.earned:.3f} · spent {self.spent:.3f})",
+            text=f"Credits: {balance:.2f}   (started at {STARTING_CREDITS:.0f} · earned {self.earned:.2f} · spent {self.spent:.2f})",
             foreground="#1b7f3b" if balance >= 0 else "#b00020")
 
     def update_model_debug(self) -> None:
@@ -429,13 +418,9 @@ class IdleApp:
 
     def new_room(self) -> None:
         if self.get("room") and not messagebox.askyesno(
-                "New room", "Replace the current room? Teammates will need the new name."):
+                "New network", "Make a new private network name? Teammates will need to type it too."):
             return
         self.v["room"].set(new_room_name())
-
-    def peer_address(self) -> str:
-        """'bob - 10.0.0.5:8765' -> '10.0.0.5:8765' (or whatever was typed)."""
-        return self.get("one_peer").split(" - ")[-1].strip()
 
     # ----- commands (exactly what you'd type in a terminal) ---------------
     def base(self, module: str) -> list[str]:
@@ -455,21 +440,13 @@ class IdleApp:
         return args
 
     def ask_command(self, prompt: str) -> list[str]:
-        if self.get("send_mode") == "one":
-            cmd = self.base("peer.chat") + ["--peer", self.peer_address() or "<pick a laptop>",
-                                            "--model", self.get("model"), "--prompt", prompt]
-            return cmd + (["--file", *self.files] if self.files else [])
         cmd = self.base("peer.split") + [prompt, "--model", self.get("model")]
         cmd += self.room_args() + self.peer_args() + self.location_args()
-        if self.get("ask_fake"):
-            cmd.append("--fake")
         return cmd + (["--file", *self.files] if self.files else [])  # --file goes last
 
     def host_command(self) -> list[str]:
         cmd = self.base("peer.server") + ["--name", self.get("host_name") or socket.gethostname()]
         cmd += self.room_args() + self.location_args()
-        if self.get("host_fake"):
-            cmd.append("--fake")
         models = [m for m, var in self.host_model_vars.items() if var.get()]
         return cmd + (["--models", *models] if models else [])
 
@@ -491,9 +468,6 @@ class IdleApp:
             return
         if self.ask_runner.running:
             messagebox.showinfo("Busy", "Still working on the last prompt. Press Stop to cancel it.")
-            return
-        if self.get("send_mode") == "one" and not self.peer_address():
-            messagebox.showinfo("Pick a laptop", "Press 'Find laptops' or type an IP address first.")
             return
         self.refresh_files()
         if self.attach_error:
@@ -525,11 +499,9 @@ class IdleApp:
     def check_peer(self) -> None:
         """Explain why a laptop can't be reached (runs python -m peer.check)."""
         extra = self.get("extra_peers").replace(",", " ").split()
-        target = self.peer_address() if self.get("send_mode") == "one" and self.peer_address() else \
-            (extra[0] if extra else self.peer_address())
+        target = extra[0] if extra else ""
         if not target:
-            messagebox.showinfo("Check laptop", "Type the laptop's IP in 'Extra IPs' (or pick one under "
-                                "'Just one laptop'), then press Check laptop.")
+            messagebox.showinfo("Check laptop", "Type the laptop's IP in 'Extra IPs', then press Check laptop.")
             return
         if self.check_runner.running:
             return
@@ -538,13 +510,7 @@ class IdleApp:
         self.check_runner.start(cmd)
 
     def find_finished(self, code: int) -> None:
-        for line in self.find_runner.output.splitlines():
-            if line.startswith("PEERS_JSON "):
-                peers = json.loads(line[len("PEERS_JSON "):])
-                values = [f"{p['name']} ({carbon.label(p.get('location'))}) - {p['address']}" for p in peers]
-                self.peer_box.configure(values=values)
-                if values and not self.get("one_peer"):
-                    self.v["one_peer"].set(values[0])
+        pass  # the list of laptops is shown in the log
 
     # ----- host mode ------------------------------------------------------
     def toggle_host(self) -> None:

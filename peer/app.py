@@ -11,13 +11,15 @@ a clear view of where each part went, which model ran it, CO2 and credits.
 """
 import argparse
 import os
+import re
+import time
 from pathlib import Path
 
 from nicegui import app, run, ui
 
 from peer import carbon
-from peer.api import Bridge, models_used, routing
-from peer.config import COORDINATOR_MODEL, MODELS, RESULTS_DIR
+from peer.api import Bridge, co2_summary, final_answer, models_used, routing
+from peer.config import COORDINATOR_MODEL, MODELS, RESULTS_DIR, STARTING_CREDITS
 from peer.room import new_room_name
 from peer.settings import PROJECT_DIR, load_settings, save_settings
 
@@ -41,6 +43,13 @@ body {{ background: {PAPER}; color: {NAVY}; font-family: Inter, system-ui, 'Sego
 .nicegui-markdown h1 {{ font-size: 1.6rem; font-family: Lexend, Poppins, Arial, sans-serif; margin: .2em 0 .4em; }}
 .nicegui-markdown h2 {{ font-size: 1.25rem; font-family: Lexend, Poppins, Arial, sans-serif; margin: .8em 0 .3em; }}
 .nicegui-markdown h3 {{ font-size: 1.05rem; font-family: Lexend, Poppins, Arial, sans-serif; margin: .8em 0 .2em; }}
+.bubble-you {{ background: {MINT}; color: {NAVY}; border-radius: 14px 14px 2px 14px; padding: 10px 14px; max-width: 75%; }}
+.bubble-idle {{ background: white; color: {NAVY}; border: 1.5px solid {NAVY}; border-radius: 14px 14px 14px 2px;
+               padding: 10px 14px; max-width: 85%; }}
+.bubble-idle p:last-child, .bubble-you p:last-child {{ margin-bottom: 0; }}
+.chat-box, .chat-box * {{ box-sizing: border-box; }}
+.chat-box {{ max-width: 100%; overflow-x: hidden; }}
+.chat-log pre, .chat-log code {{ white-space: pre-wrap !important; word-break: break-word; }}
 .q-tab {{ font-family: Lexend, Poppins, 'Helvetica Neue', Arial, sans-serif; text-transform: none; }}
 .q-tab--active {{ color: {NAVY}; }}
 """
@@ -99,7 +108,41 @@ class LogFeed:
             self.pending = ""
 
 
+# ---------------------------------------------------------------- chat history
+def parse_result(text: str) -> tuple[str, str, str]:
+    """(prompt, attached, answer) from a saved results file (new chat format or the older one)."""
+    if text.startswith("**You:**"):
+        you, _, idle = text.partition("**Idle:**")
+        you = you.replace("**You:**", "", 1).strip()
+        attached = ""
+        if "\n*Attached: " in you:
+            you, _, attached = you.rpartition("\n*Attached: ")
+            attached = attached.rstrip("*").strip()
+        return you.strip(), attached, idle.strip()
+    prompt = re.search(r"\*\*Prompt:\*\* (.*)", text)
+    answer = re.search(r"## Final answer\n\n?(.*?)(\n## Parts|\Z)", text, re.S)
+    attached = re.search(r"\*\*Attached:\*\* (.*)", text)
+    return (prompt.group(1).strip() if prompt else "", attached.group(1).strip() if attached else "",
+            answer.group(1).strip() if answer else text)
+
+
+def chat_bubbles(prompt: str, attached: str, answer: str | None) -> None:
+    with ui.row().classes("w-full justify-end"):
+        with ui.column().classes("bubble-you gap-1"):
+            ui.markdown(prompt)
+            if attached:
+                ui.label(f"📎 {attached}").classes("text-xs opacity-70")
+    if answer is not None:
+        with ui.row().classes("w-full justify-start no-wrap items-start gap-2"):
+            ui.image("/assets/icon.png").classes("w-8 h-8 shrink-0")
+            with ui.column().classes("bubble-idle gap-1"):
+                ui.markdown(answer)
+
+
 # ---------------------------------------------------------------- the page
+conversation: list[dict] = []   # this session's chat: {"prompt", "attached", "answer", "meta", "details", ...}
+
+
 @ui.page("/")
 def index() -> None:
     ui.add_css(CSS)
@@ -116,7 +159,7 @@ def index() -> None:
             t_ask = ui.tab("Ask", icon="chat_bubble_outline")
             t_host = ui.tab("Host", icon="dns")
             t_net = ui.tab("Network", icon="hub")
-            t_res = ui.tab("Results", icon="description")
+            t_hist = ui.tab("Chat history", icon="history")
         ui.space()
         ollama_badge = ui.label().classes("idle-pill text-xs")
         hosting_badge = ui.label("● Hosting").classes(f"idle-pill bg-[{MINT}] text-xs")
@@ -124,80 +167,49 @@ def index() -> None:
         with credits_pill:
             credits_tip = ui.tooltip()
 
-    with ui.tab_panels(tabs, value=t_ask, animated=False).classes(f"w-full max-w-6xl mx-auto bg-[{PAPER}]"):
+    with ui.tab_panels(tabs, value=t_ask, animated=False).classes(f"w-full max-w-5xl mx-auto bg-[{PAPER}]"):
 
-        # ================================================================ ASK
-        with ui.tab_panel(t_ask).classes("gap-4"):
-            with ui.row().classes("w-full gap-4 items-stretch no-wrap"):
-                # model
-                with ui.card().classes("idle-card w-1/2"):
-                    ui.label("Model for the helpers").classes("idle-caption")
-                    model_options = {m: f"{m}  ·  {'text + images' if i['images'] else 'text'}  ·  ~{i['size']}"
-                                     for m, i in MODELS.items()}
-                    ui.select(model_options, value=s["model"],
-                              on_change=lambda e: (save("model", e.value), refresh_attachments())
-                              ).classes("w-full").props("outlined dense")
-                    model_about = ui.label().classes("text-sm opacity-80")
-                    ui.label(f"Splitting and combining always use {COORDINATOR_MODEL} on this laptop. "
-                             "Missing models download automatically.").classes("text-xs opacity-60")
-                # how to send
-                with ui.card().classes("idle-card w-1/2"):
-                    ui.label("How to send").classes("idle-caption")
-                    send_toggle = ui.toggle({"split": "Split across laptops", "one": "Just one laptop"},
-                                            value=s["send_mode"],
-                                            on_change=lambda e: (save("send_mode", e.value), one_row.set_visibility(e.value == "one"))
-                                            ).props(f"no-caps unelevated toggle-color=primary color=white text-color=dark")
-                    with ui.row().classes("w-full items-center no-wrap") as one_row:
-                        peer_select = ui.select({}, value=None, label="Laptop",
-                                                on_change=lambda e: save("one_peer", e.value or "")
-                                                ).classes("grow").props("outlined dense")
-                        ui.button("Find", icon="search", on_click=lambda: find_laptops()).props("flat dense")
-                    one_row.set_visibility(s["send_mode"] == "one")
-                    ui.label("Parts go to the laptops on the cleanest power grids first.").classes("text-xs opacity-60")
+        # ================================================================ ASK (chat)
+        with ui.tab_panel(t_ask).classes("gap-3"):
+            with ui.row().classes("w-full items-center no-wrap gap-3"):
+                ui.label("Model").classes("idle-caption")
+                model_options = {m: f"{m}  ·  {'text + images' if i['images'] else 'text'}  ·  ~{i['size']}"
+                                 for m, i in MODELS.items()}
+                ui.select(model_options, value=s["model"],
+                          on_change=lambda e: (save("model", e.value), refresh_attachments())
+                          ).classes("w-80").props("outlined dense")
+                model_about = ui.label().classes("text-sm opacity-70")
+                ui.space()
+                ui.label(f"Split across laptops on the cleanest grids · planned by {COORDINATOR_MODEL}"
+                         ).classes("text-xs opacity-50")
 
-            # attachments
-            with ui.card().classes("idle-soft w-full"):
-                with ui.row().classes("w-full items-center"):
-                    ui.label("Attachments").classes("idle-caption")
-                    ui.label("PDF, images (for image models), text files").classes("text-xs opacity-60")
-                    ui.space()
+            chat_scroll = ui.scroll_area().classes("w-full h-[56vh] idle-soft")
+            with chat_scroll:
+                chat_box = ui.column().classes("chat-box w-full gap-3 p-2")
+
+            # prompt bar: attachments + paperclip + text + send
+            with ui.card().classes("idle-card w-full gap-2"):
+                with ui.row().classes("w-full items-center gap-2") as chips_row:
+                    chips = ui.row().classes("gap-2")
+                    attach_warning = ui.label().classes("text-sm text-red-700")
                     pdf_button = ui.button("Install PDF support", icon="download",
                                            on_click=lambda: install_pdf()).props("outline dense no-caps")
-                with ui.row().classes("w-full items-start no-wrap gap-4"):
-                    ui.upload(multiple=True, auto_upload=True, on_upload=lambda e: on_upload(e),
-                              label="Drop files or click +").props("flat bordered color=primary").classes("w-72")
-                    with ui.column().classes("grow gap-1"):
-                        chips = ui.row().classes("gap-2")
-                        attach_warning = ui.label().classes("text-sm text-red-700")
-
-            # prompt
-            with ui.card().classes("idle-card w-full"):
-                prompt = ui.textarea(placeholder="Ask anything… e.g. “Give me the first 30 prime numbers”"
-                                     ).classes("w-full text-base").props("borderless autogrow input-style=min-height:90px")
-                prompt.on("keydown.ctrl.enter", lambda: send())
-                prompt.on("keydown.meta.enter", lambda: send())
-                with ui.row().classes("w-full items-center"):
-                    ui.label("Ctrl+Enter to send").classes("text-xs opacity-50")
-                    ui.space()
-                    stop_button = ui.button("Stop", icon="stop", on_click=lambda: bridge.ask.stop()
-                                            ).props("outline no-caps color=negative")
-                    send_button = ui.button("Send", icon="send", on_click=lambda: send()
-                                            ).props("unelevated no-caps color=dark")
-
-            # live run view
-            with ui.card().classes("idle-soft w-full") as run_card:
-                with ui.row().classes("w-full items-center"):
-                    ui.label("This run").classes("idle-caption")
-                    run_spinner = ui.spinner(size="sm", color="primary")
-                    ui.space()
-                    run_status = ui.label().classes("text-sm opacity-70")
-                with ui.row().classes("w-full no-wrap gap-6 items-start"):
-                    with ui.column().classes("w-80 shrink-0"):
-                        steps_box = ui.column().classes("w-full gap-1")
-                    with ui.column().classes("grow gap-2"):
-                        answer_box = ui.column().classes("w-full")
-                with ui.expansion("Show log", icon="terminal").classes("w-full"):
-                    ask_feed = LogFeed(bridge.ask)
+                uploader = ui.upload(multiple=True, auto_upload=True, on_upload=lambda e: on_upload(e)
+                                     ).style("position:absolute; width:1px; height:1px; opacity:0; overflow:hidden")
+                # (invisible: the paperclip button below opens its file picker)
+                with ui.row().classes("w-full items-end no-wrap gap-2"):
+                    # Opens the file picker right in the page: browsers only allow that directly from a click.
+                    ui.button(icon="attach_file").props("flat round color=dark").tooltip(
+                        "Add files (PDF, images, text)").on(
+                        "click", js_handler=f'() => document.querySelector("#{uploader.html_id} input[type=file]").click()')
+                    prompt = ui.textarea(placeholder="Message Idle…  (Ctrl+Enter to send)"
+                                         ).classes("grow text-base").props("borderless autogrow")
+                    prompt.on("keydown.ctrl.enter", lambda: send())
+                    prompt.on("keydown.meta.enter", lambda: send())
+                    stop_button = ui.button(icon="stop", on_click=lambda: bridge.ask.stop()
+                                            ).props("round unelevated color=negative").tooltip("Stop")
+                    send_button = ui.button(icon="arrow_upward", on_click=lambda: send()
+                                            ).props("round unelevated color=dark").tooltip("Send")
 
         # ================================================================ HOST
         with ui.tab_panel(t_host).classes("gap-4"):
@@ -208,8 +220,6 @@ def index() -> None:
                 with ui.row().classes("w-full items-end gap-6"):
                     ui.input("Your name", value=s["host_name"],
                              on_change=lambda e: save("host_name", e.value.strip())).props("outlined dense")
-                    ui.switch("Fake model (testing, no Ollama)", value=s["host_fake"],
-                              on_change=lambda e: save("host_fake", e.value))
                     ui.space()
                     host_button = ui.button(on_click=lambda: toggle_host()).props("unelevated no-caps size=lg")
                 ui.label("Models to download and share").classes("idle-caption mt-2")
@@ -228,14 +238,15 @@ def index() -> None:
         with ui.tab_panel(t_net).classes("gap-4"):
             with ui.row().classes("w-full gap-4 items-stretch no-wrap"):
                 with ui.card().classes("idle-card w-1/2"):
-                    ui.label("Room").classes("idle-caption")
+                    ui.label("Network name").classes("idle-caption")
                     with ui.row().classes("w-full items-center no-wrap"):
-                        room_input = ui.input(value=s["room"], placeholder="e.g. maple-otter-river-42",
-                                              on_change=lambda e: save("room", e.value.strip())
+                        room_input = ui.input(value=s["room"], placeholder="general",
+                                              on_change=lambda e: save("room", e.value.strip() or "general")
                                               ).classes("grow").props("outlined dense")
-                        ui.button("New room", on_click=lambda: room_input.set_value(new_room_name())
+                        ui.button("New private network", on_click=lambda: room_input.set_value(new_room_name())
                                   ).props("outline no-caps")
-                    ui.label("Everyone on your team uses the same room name; keep it private.").classes("text-xs opacity-60")
+                    ui.label("Everyone on the same network name can use each other's laptops. 'general' is "
+                             "open to all; make a private name for just your team.").classes("text-xs opacity-60")
                 with ui.card().classes("idle-card w-1/2"):
                     ui.label("Location").classes("idle-caption")
                     locations = {"": "Not set (used last)"} | {
@@ -243,7 +254,7 @@ def index() -> None:
                         for code, info in carbon.provinces().items()}
                     ui.select(locations, value=s["location"] or "",
                               on_change=lambda e: save("location", e.value or "")).classes("w-full").props("outlined dense")
-                    ui.label("Fake for now · parts go to the cleanest grids first").classes("text-xs opacity-60")
+                    ui.label("Sample data for now · parts go to the cleanest grids first").classes("text-xs opacity-60")
             with ui.card().classes("idle-soft w-full"):
                 ui.label("Grid carbon intensity (g CO2/kWh)").classes("idle-caption")
                 worst = max(i["g_co2_per_kwh"] for i in carbon.provinces().values())
@@ -257,11 +268,10 @@ def index() -> None:
                             ui.label(f"{g}").classes("w-10 text-right text-sm")
             with ui.row().classes("w-full gap-4 items-stretch no-wrap"):
                 with ui.card().classes("idle-card w-1/2"):
-                    ui.label("Finding laptops").classes("idle-caption")
-                    ui.input("Extra IPs (if a laptop isn't in the room)", value=s["extra_peers"],
+                    ui.label("Laptops on your network").classes("idle-caption")
+                    ui.input("Extra IPs (if a laptop isn't on the network)", value=s["extra_peers"],
                              on_change=lambda e: save("extra_peers", e.value)).classes("w-full").props("outlined dense")
                     ui.switch("Also search the Wi-Fi", value=s["search_wifi"], on_change=lambda e: save("search_wifi", e.value))
-                    ui.switch("Fake model for asking (testing)", value=s["ask_fake"], on_change=lambda e: save("ask_fake", e.value))
                     ui.button("Find laptops", icon="search", on_click=lambda: find_laptops()).props("unelevated no-caps color=dark")
                     peers_box = ui.column().classes("w-full gap-1")
                 with ui.card().classes("idle-card w-1/2"):
@@ -272,33 +282,123 @@ def index() -> None:
                     check_output = ui.code("", language="text").classes("w-full text-xs")
                     status_line = ui.label().classes("text-sm opacity-70")
 
-        # ================================================================ RESULTS
-        with ui.tab_panel(t_res).classes("gap-4"):
+        # ================================================================ CHAT HISTORY
+        with ui.tab_panel(t_hist).classes("gap-4"):
             with ui.row().classes("w-full no-wrap gap-4 items-start"):
                 with ui.card().classes("idle-card w-72 shrink-0"):
                     with ui.row().classes("w-full items-center"):
-                        ui.label("Saved results").classes("idle-caption")
+                        ui.label("Past chats").classes("idle-caption")
                         ui.space()
                         ui.button(icon="refresh", on_click=lambda: list_results()).props("flat dense round")
                     results_list = ui.column().classes("w-full gap-0")
                 with ui.card().classes("idle-soft grow"):
-                    result_view = ui.markdown("Pick a result on the left.").classes("w-full")
+                    history_view = ui.column().classes("w-full gap-3")
+                    with history_view:
+                        ui.label("Pick a chat on the left.").classes("opacity-60")
 
-    # ---------------------------------------------------------------- behaviour
+    # ---------------------------------------------------------------- chat
+    live = {"status": None}  # the "working…" label of the message being answered
+
+    def render_chat() -> None:
+        chat_box.clear()
+        with chat_box:
+            if not conversation:
+                with ui.column().classes("w-full items-center py-16 gap-2 opacity-70"):
+                    ui.image("/assets/icon.png").classes("w-20 h-20")
+                    ui.label("Ask anything.").classes("idle-title text-xl")
+                    ui.label("Your prompt is split across the laptops on your network, cleanest power grids "
+                             "first, and Idle replies here.").classes("text-sm text-center max-w-md")
+            for turn in conversation:
+                chat_bubbles(turn["prompt"], turn["attached"], turn["answer"])
+                if turn["answer"] is None:
+                    with ui.row().classes("w-full items-center gap-2 pl-10"):
+                        ui.spinner("dots", size="lg", color="primary")
+                        live["status"] = ui.label(turn.get("status") or "Thinking…").classes("text-sm opacity-70")
+                else:
+                    with ui.row().classes("w-full items-center gap-3 pl-10"):
+                        ui.label(turn["meta"]).classes("text-xs opacity-60")
+                    if turn.get("details"):
+                        with ui.row().classes("w-full pl-10"):
+                            with ui.expansion("Details", icon="tune").classes("w-full text-sm"):
+                                for line in turn["details"]:
+                                    ui.label(line).classes("text-xs")
+                                ui.code(turn["log"], language="text").classes(
+                                    "chat-log w-full text-xs max-h-64 overflow-auto")
+        chat_scroll.scroll_to(percent=1.0)
+
+    def describe_progress(output: str) -> str:
+        steps = models_used(output)
+        parts = [st for st in steps if st["step"].startswith("part")]
+        if any(st["step"] == "combine" for st in steps):
+            return "Putting the answers together…"
+        if parts:
+            done = sum(st["done"] for st in parts)
+            where = ", ".join(sorted({st["laptop"] for st in parts}))
+            return f"Working on {len(parts)} part(s): {done} done ({where})"
+        if "Downloading" in output:
+            return "Downloading the model (one time)…"
+        if any(st["step"] == "plan" for st in steps) or "PLAN:" in output:
+            return "Planning how to split it…"
+        return "Finding laptops on your network…"
+
+    def finish_turn(turn: dict) -> None:
+        output = bridge.ask.output
+        answer = final_answer(output)
+        if not answer:
+            last_lines = [l for l in output.strip().splitlines() if l.strip()][-3:]
+            answer = "Sorry, that didn't finish. " + (" ".join(last_lines)[-300:] if last_lines else "")
+        steps = models_used(output)
+        where = {f"part {r['part']}": r for r in routing(output)}
+        laptops = sorted({st["laptop"] for st in steps if st["step"].startswith("part")})
+        co2 = co2_summary(output)
+        spent = re.search(r"Credits for this prompt: ([\d.]+) spent", output)
+        meta = [f"{len(laptops)} laptop(s)"] if laptops else []
+        if co2:
+            meta.append(f"~{co2['grams']:.3f} g CO2")
+        if spent:
+            meta.append(f"{float(spent.group(1)):.2f} credits")
+        turn.update(answer=answer, meta=" · ".join(meta),
+                    details=[f"{st['step']}: {st['laptop']} · {st['model']}"
+                             + (f" · {where[st['step']]['location']} ({where[st['step']]['g_co2_per_kwh']:g} g/kWh)"
+                                if st["step"] in where else "") for st in steps],
+                    log=output)
+        for file_id in turn.get("file_ids", []):  # attachments go with one message only
+            bridge.remove_file(file_id)
+        refresh_attachments()
+        list_results()
+        render_chat()
+
+    def send() -> None:
+        text = (prompt.value or "").strip()
+        try:
+            bridge.start_ask(text)
+        except ValueError as err:
+            ui.notify(str(err), type="warning")
+            return
+        files = [f for f in bridge.files.values() if not f.get("error")]
+        conversation.append({"prompt": text, "attached": ", ".join(f["name"] for f in files),
+                             "file_ids": [f["id"] for f in files], "answer": None, "status": "Thinking…"})
+        prompt.set_value("")
+        chips_row.set_visibility(False)
+        render_chat()
+
+    # ---------------------------------------------------------------- attachments
     def refresh_attachments() -> None:
         chips.clear()
         state = bridge.state()
+        sending = bridge.ask.running and conversation and conversation[-1]["answer"] is None
+        shown = [f for f in state["attachments"]
+                 if not (sending and f["id"] in conversation[-1].get("file_ids", []))]
         with chips:
-            if not state["attachments"]:
-                ui.label("No attachments").classes("text-sm opacity-50")
-            for f in state["attachments"]:
+            for f in shown:
                 ui.chip(f["summary"] + (f" — {f['error']}" if f["error"] else ""), removable=True,
                         icon="error_outline" if f["error"] else "attach_file",
                         color="red-2" if f["error"] else "accent",
                         on_value_change=lambda e, i=f["id"]: (bridge.remove_file(i), refresh_attachments()))
-        attach_warning.set_text(state["attachment_warning"] or "")
-        needs_pdf = any(f["name"].lower().endswith(".pdf") for f in state["attachments"]) and not state["pdf_supported"]
+        attach_warning.set_text(state["attachment_warning"] or "" if shown else "")
+        needs_pdf = any(f["name"].lower().endswith(".pdf") for f in shown) and not state["pdf_supported"]
         pdf_button.set_visibility(needs_pdf)
+        chips_row.set_visibility(bool(shown))
 
     async def on_upload(e) -> None:
         data = await e.file.read()
@@ -318,14 +418,7 @@ def index() -> None:
                   type="positive" if result["pdf_supported"] else "negative")
         refresh_attachments()
 
-    def send() -> None:
-        try:
-            bridge.start_ask(prompt.value or "")
-        except ValueError as err:
-            ui.notify(str(err), type="warning")
-            return
-        ask_feed.reset()
-
+    # ---------------------------------------------------------------- host / network
     def toggle_host() -> None:
         if bridge.host.running:
             bridge.host.stop()
@@ -342,12 +435,10 @@ def index() -> None:
         result = await run.io_bound(bridge.find_peers, load_settings())
         n.dismiss()
         peers = result["peers"]
-        options = {p["label"]: f"{p['name']}  ·  {carbon.label(p.get('location'))}  ·  {p['address']}" for p in peers}
-        peer_select.set_options(options, value=next(iter(options), None) if peer_select.value not in options else peer_select.value)
         peers_box.clear()
         with peers_box:
             if not peers:
-                ui.label("No other laptops found. Check the room name, or add their IP above.").classes("text-sm opacity-60")
+                ui.label("No other laptops found. Check the network name, or add their IP above.").classes("text-sm opacity-60")
             for p in peers:
                 g = carbon.intensity(p.get("location")) if p.get("location") else None
                 with ui.row().classes("w-full items-center no-wrap gap-2 idle-soft px-3 py-1"):
@@ -366,90 +457,65 @@ def index() -> None:
         result = await run.io_bound(bridge.check, check_input.value.strip())
         check_output.set_content(result["log"].split("\n", 1)[-1].strip())
 
+    # ---------------------------------------------------------------- history
+    def show_result(file: Path) -> None:
+        you, attached, answer = parse_result(file.read_text(encoding="utf-8"))
+        history_view.clear()
+        with history_view:
+            ui.label(time.strftime("%d %b %Y, %H:%M", time.strptime(file.stem, "%Y%m%d-%H%M%S"))
+                     if re.fullmatch(r"\d{8}-\d{6}", file.stem) else file.stem).classes("idle-caption")
+            chat_bubbles(you, attached, answer)
+
     def list_results() -> None:
         results_list.clear()
         folder = PROJECT_DIR / RESULTS_DIR
-        files = sorted(folder.glob("*.md"), reverse=True)[:40] if folder.is_dir() else []
+        files = sorted(folder.glob("*.md"), reverse=True)[:60] if folder.is_dir() else []
         with results_list:
             if not files:
-                ui.label("Nothing saved yet.").classes("text-sm opacity-60")
+                ui.label("No chats yet.").classes("text-sm opacity-60")
             for f in files:
-                ui.button(f.stem, on_click=lambda f=f: result_view.set_content(f.read_text(encoding="utf-8"))
-                          ).props("flat no-caps align=left").classes("w-full")
+                try:
+                    title = parse_result(f.read_text(encoding="utf-8"))[0].splitlines()[0][:40] or f.stem
+                except (OSError, IndexError):
+                    title = f.stem
+                with ui.button(on_click=lambda f=f: show_result(f)).props("flat no-caps align=left").classes("w-full"):
+                    with ui.column().classes("gap-0 items-start"):
+                        ui.label(title).classes("text-sm text-left")
+                        ui.label(f.stem).classes("text-xs opacity-50")
 
-    last = {"ask_len": -1, "running": None}
-
-    def render_run() -> None:
-        output = bridge.ask.output
-        steps_box.clear()
-        answer_box.clear()
-        if not bridge.ask.command:
-            with steps_box:
-                ui.label("Nothing sent yet.").classes("text-sm opacity-50")
-            return
-        where = {f"part {r['part']}": r for r in routing(output)}
-        with steps_box:
-            for step in models_used(output):
-                r = where.get(step["step"])
-                with ui.row().classes("w-full items-center no-wrap gap-2 idle-soft px-3 py-2"):
-                    if step["done"]:
-                        ui.icon("check_circle", color="positive")
-                    else:
-                        ui.spinner(size="xs", color="primary")
-                    with ui.column().classes("gap-0 grow"):
-                        ui.label(step["step"].capitalize()).classes("font-semibold text-sm")
-                        ui.label(f"{step['laptop']} · {step['model']}").classes("text-xs opacity-70")
-                    if r:
-                        ui.badge(f"{r['location']} {r['g_co2_per_kwh']:g} g", color=grid_colour(r["g_co2_per_kwh"]))
-        result = bridge.ask_result(0)
-        with answer_box:
-            if result["final_answer"]:
-                ui.label("Answer").classes("idle-caption")
-                ui.markdown(result["final_answer"]).classes("w-full")
-            elif bridge.ask.running:
-                ui.label("Working… the answer appears here when the helpers are done.").classes("text-sm opacity-60")
-            elif result["exit_code"] not in (None, 0):
-                ui.label("The run stopped before it finished. Open the log below to see why.").classes("text-sm text-red-700")
-            if result["co2"]:
-                c = result["co2"]
-                with ui.row().classes(f"items-center gap-2 bg-[{MINT}] px-3 py-1 rounded"):
-                    ui.icon("eco", color="dark")
-                    ui.label(f"About {c['grams']:.3f} g CO2 (estimate) — sending it all to the dirtiest laptop "
-                             f"would have used {c['dirtiest_grams']:.3f} g").classes("text-sm")
-            if result["results_file"]:
-                ui.label(f"Saved as {result['results_file']} (see Results)").classes("text-xs opacity-60")
-
+    # ---------------------------------------------------------------- every second
     def tick() -> None:
         state = bridge.state()
-        # header
         c = state["credits"]
-        credits_pill.set_text(f"Credits {c['balance']:+.3f}")
+        credits_pill.set_text(f"Credits {c['balance']:.2f}")
         credits_pill.classes(replace=f"idle-pill font-semibold {'text-[#b3261e]' if c['balance'] < 0 else 'text-[' + NAVY + ']'}")
-        credits_tip.set_text(f"earned {c['earned']:.3f} · spent {c['spent']:.3f} · resets each launch · tracker only")
+        credits_tip.set_text(f"started at {STARTING_CREDITS:.0f} · earned {c['earned']:.2f} · spent {c['spent']:.2f}"
+                             " · resets each launch · tracker only")
         hosting_badge.set_visibility(state["hosting"]["running"])
         ollama_badge.set_text("Ollama ✓" if state["ollama_running"] else "Ollama not running")
         model_about.set_text(MODELS[state["settings"]["model"]]["about"])
-        # ask
+        # chat
         running = bridge.ask.running
         send_button.set_enabled(not running)
         stop_button.set_visibility(running)
-        run_spinner.set_visibility(running)
-        run_status.set_text(bridge.ask.command[:110] + ("…" if len(bridge.ask.command) > 110 else ""))
-        ask_feed.update()
-        if len(bridge.ask.output) != last["ask_len"] or running != last["running"]:
-            if last["running"] and not running:
-                list_results()  # a run just finished: show its saved file
-            last["ask_len"], last["running"] = len(bridge.ask.output), running
-            render_run()
+        if conversation and conversation[-1]["answer"] is None:
+            turn = conversation[-1]
+            if running:
+                turn["status"] = describe_progress(bridge.ask.output)
+                if live["status"] is not None:
+                    live["status"].set_text(turn["status"])
+            else:
+                finish_turn(turn)
         # host
         host_running = state["hosting"]["running"]
         host_button.set_text("Stop hosting" if host_running else "Start hosting")
         host_button.props(f"color={'negative' if host_running else 'dark'} icon={'stop' if host_running else 'play_arrow'}")
-        host_earned.set_text(f"earned this session: {c['earned']:.3f} credits")
+        host_earned.set_text(f"earned this session: {c['earned']:.2f} credits")
         host_feed.update()
         status_line.set_text(("Ollama is running" if state["ollama_running"] else "Ollama isn't running on this laptop")
                              + " · PDF support " + ("installed" if state["pdf_supported"] else "not installed"))
 
+    render_chat()
     refresh_attachments()
     list_results()
     tick()

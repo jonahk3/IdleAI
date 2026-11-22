@@ -30,7 +30,7 @@ from pathlib import Path
 
 from peer import attachments, carbon, ollama
 from peer.config import (API_ALLOWED_ORIGINS, API_PORT, COORDINATOR_MODEL, MODELS, RESULTS_DIR,
-                         UI_URL)
+                         STARTING_CREDITS, UI_URL)
 from peer.room import new_room_name
 from peer.settings import PROJECT_DIR, load_settings, save_settings
 
@@ -203,22 +203,14 @@ class Bridge:
         return [f["path"] for f in self.files.values() if not f.get("error")]
 
     def ask_command(self, s: dict, prompt: str) -> list[str]:
+        # Always split: the planner decides how many laptops (1 or more), and carbon-aware
+        # routing picks which ones.
         files = self.file_paths()
-        if s.get("send_mode") == "one":
-            peer = (s.get("one_peer") or "").split(" - ")[-1].strip()
-            if not peer:
-                raise ValueError("Pick a laptop first (Find laptops), or switch to 'Split across all laptops'.")
-            cmd = self.base("peer.chat") + ["--peer", peer, "--model", s["model"], "--prompt", prompt]
-        else:
-            cmd = self.base("peer.split") + [prompt, "--model", s["model"]] + self.common(s) + self.peer_args(s)
-            if s.get("ask_fake"):
-                cmd.append("--fake")
+        cmd = self.base("peer.split") + [prompt, "--model", s["model"]] + self.common(s) + self.peer_args(s)
         return cmd + (["--file", *files] if files else [])
 
     def host_command(self, s: dict) -> list[str]:
         cmd = self.base("peer.server") + ["--name", s.get("host_name") or "laptop"] + self.common(s)
-        if s.get("host_fake"):
-            cmd.append("--fake")
         models = [m for m in s.get("host_models") or [] if m in MODELS]
         return cmd + (["--models", *models] if models else [])
 
@@ -235,8 +227,8 @@ class Bridge:
             "models": [{"name": m, **info} for m, info in MODELS.items()],
             "coordinator_model": COORDINATOR_MODEL,
             "locations": [{"code": c, **info} for c, info in carbon.provinces().items()],
-            "credits": {"earned": round(self.earned, 3), "spent": round(self.spent, 3),
-                        "balance": round(self.earned - self.spent, 3)},
+            "credits": {"start": STARTING_CREDITS, "earned": round(self.earned, 2), "spent": round(self.spent, 2),
+                        "balance": round(STARTING_CREDITS + self.earned - self.spent, 2)},
             "hosting": {"running": self.host.running, "command": self.host.command},
             "asking": {"running": self.ask.running, "command": self.ask.command},
             "peers": self.peers,

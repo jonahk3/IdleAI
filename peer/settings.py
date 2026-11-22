@@ -4,21 +4,17 @@ import socket
 from pathlib import Path
 
 from peer import carbon
-from peer.config import DEFAULT_MODEL, MODELS, ROOM_FILE
+from peer.config import DEFAULT_MODEL, DEFAULT_NETWORK, MODELS, ROOM_FILE
 
 SETTINGS_FILE = "gui_settings.json"
 PROJECT_DIR = Path(__file__).resolve().parent.parent  # the folder that contains peer/
 
 DEFAULTS = {
     "mode": "ask",              # "ask" or "host"
-    "room": "",
+    "room": DEFAULT_NETWORK,    # network name (shown as "Network name")
     "model": DEFAULT_MODEL,
     "host_name": socket.gethostname(),
-    "host_fake": False,
-    "send_mode": "split",       # "split" or "one"
-    "one_peer": "",
     "search_wifi": True,
-    "ask_fake": False,
     "extra_peers": "",
     "location": "",             # province code (fake for now), used for carbon-aware routing
     "host_models": [DEFAULT_MODEL],  # models to download and share while hosting
@@ -37,11 +33,11 @@ def load_settings() -> dict:
     if settings["model"] not in MODELS:  # e.g. a model that was removed from the list
         settings["model"] = DEFAULT_MODEL
     settings["host_models"] = [m for m in settings.get("host_models") or [] if m in MODELS]
-    if not settings["room"]:  # fall back to the room the command-line tools saved
+    if not settings["room"] or settings["room"] == DEFAULT_NETWORK:  # the one the terminal tools saved
         try:
-            settings["room"] = Path(ROOM_FILE).read_text().strip()
+            settings["room"] = Path(ROOM_FILE).read_text().strip() or DEFAULT_NETWORK
         except OSError:
-            pass
+            settings["room"] = DEFAULT_NETWORK
     return settings
 
 

@@ -19,11 +19,11 @@ def credits_for(usage: dict | None) -> tuple[float, str]:
     tin, tout = usage.get("input_tokens"), usage.get("output_tokens")
     if tin is not None or tout is not None:
         tokens = (tin or 0) + (tout or 0)
-        return round(tokens / 1000 * CREDITS_PER_1000_TOKENS, 3), f"{tokens:,} tokens ({tin or 0:,} in, {tout or 0:,} out)"
+        return round(tokens / 1000 * CREDITS_PER_1000_TOKENS, 2), f"{tokens:,} tokens ({tin or 0:,} in, {tout or 0:,} out)"
     seconds = float(usage.get("seconds") or 0)
-    return round(seconds / 60 * CREDITS_PER_MINUTE, 3), f"{seconds:.1f}s of compute (no token count)"
+    return round(seconds / 60 * CREDITS_PER_MINUTE, 2), f"{seconds:.1f}s of compute (no token count)"
 
 
 def line(kind: str, amount: float, detail: str) -> str:
     """The [credits] line printed by the tools (the GUI reads these to keep the balance)."""
-    return f"[credits] {kind} {amount:.3f} credits ({detail})"
+    return f"[credits] {kind} {amount:.2f} credits ({detail})"
