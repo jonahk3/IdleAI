@@ -33,7 +33,9 @@ Reply with JSON only: {"parts": ["...", "..."]}"""
 
 
 def planner_user(task: str, helpers: int) -> str:
-    return f"Task: {task}\n\nThere are {helpers} helpers, so use at most {helpers} parts."
+    return (f"Task: {task}\n\n"
+            f"There are {helpers} helpers available. Use as many or as few of them as the task needs "
+            f"(at most {helpers}): one part per independent piece, and just 1 part if the task can't be split.")
 
 
 # ---------------------------------------------------------------- 2. run (each helper)
