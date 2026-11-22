@@ -1,10 +1,10 @@
 """Settings shared by the peer server and the chat client."""
 import os
 
-# Port the peer server listens on (other laptops connect to this).
+# Port the peer server listens on (other devices connect to this).
 PEER_PORT = 8765
 
-# Where this laptop's own Ollama runs. Ollama is never exposed to the network
+# Where this device's own Ollama runs. Ollama is never exposed to the network
 # directly; only our peer server talks to it.
 OLLAMA_URL = os.environ.get("IDLE_OLLAMA_URL", "http://127.0.0.1:11434")  # not "localhost": slow to look up on Windows
 
@@ -20,13 +20,13 @@ MODELS = {
 }
 
 # Safety: the peer server only runs (and only downloads) models on this list,
-# no matter what a remote laptop asks for.
+# no matter what a remote device asks for.
 MODEL_ALLOWLIST = list(MODELS)
 
 DEFAULT_MODEL = "llama3.2:3b"
 
 # The "coordinator" model plans (splits the prompt) and combines the answers on the asking
-# laptop, whatever model you pick for the helpers. Small models like lfm3 often return empty
+# device, whatever model you pick for the helpers. Small models like lfm3 often return empty
 # or one-part plans, so this stays on llama. Override with peer.split --coordinator NAME.
 COORDINATOR_MODEL = "llama3.2:3b"
 
@@ -39,16 +39,16 @@ MAX_IMAGES = 8
 # Max time (seconds) to wait for Ollama to answer one message.
 OLLAMA_TIMEOUT = 300
 
-# UDP port used to find other laptops on the Wi-Fi ("who's out there?").
+# UDP port used to find other devices on the Wi-Fi ("who's out there?").
 DISCOVERY_PORT = 8766
 
 # Folder where peer.split saves its answers.
 RESULTS_DIR = "results"
 
-# peer.split remembers laptops that worked here, and tries them again next time.
+# peer.split remembers devices that worked here, and tries them again next time.
 KNOWN_PEERS_FILE = "known_peers.json"
 
-# "Room" meeting point: laptops post their address here so peers can find them
+# "Room" meeting point: devices post their address here so peers can find them
 # on networks that block discovery (e.g. university Wi-Fi). Free, no account.
 ROOM_SERVICE_URL = os.environ.get("IDLE_ROOM_SERVICE", "https://ntfy.sh")
 ROOM_FILE = "room.txt"          # your network name is remembered here (never commit it)
@@ -65,14 +65,14 @@ CREDITS_PER_1000_TOKENS = 100.0  # tokens = what the model read (input) + what i
 CREDITS_PER_MINUTE = 300.0       # used instead when a model doesn't report token counts
 STARTING_CREDITS = 500.0         # every session starts with this balance (until accounts exist)
 
-# Carbon-aware routing: parts go to the laptops on the cleanest power grids first.
-# Locations are fake for now (each laptop picks one); data is in peer/provinces.json.
-UNKNOWN_G_CO2_PER_KWH = 1000    # a laptop with no location is treated as the dirtiest
+# Carbon-aware routing: parts go to the devices on the cleanest power grids first.
+# Locations are fake for now (each device picks one); data is in peer/provinces.json.
+UNKNOWN_G_CO2_PER_KWH = 1000    # a device with no location is treated as the dirtiest
 LAPTOP_WATTS = 30               # rough power draw while running a model (for CO2 estimates)
 
 # Web app (Lovable UI) + local bridge (python -m peer.api).
 API_PORT = 8800
-# Web addresses allowed to use the bridge: Lovable-hosted apps and pages on this laptop.
+# Web addresses allowed to use the bridge: Lovable-hosted apps and pages on this device.
 API_ALLOWED_ORIGINS = os.environ.get(
     "IDLE_UI_ORIGINS",
     r"^(https://[a-z0-9-]+\.(lovable\.app|lovableproject\.com|lovable\.dev)|http://(localhost|127\.0\.0\.1)(:\d+)?)$",

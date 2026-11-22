@@ -7,7 +7,7 @@ commands you could type yourself (shown at the top of the output), runs them,
 and shows what they print. It remembers your settings in gui_settings.json.
 
   Ask mode:  type a prompt at the bottom and press Send (or Ctrl+Enter).
-  Host mode: press "Start hosting" to share this laptop's model.
+  Host mode: press "Start hosting" to share this device's model.
 """
 import codecs
 import json
@@ -84,6 +84,7 @@ class Runner:
                 if item is None:
                     self.on_exit(self.proc.returncode if self.proc else 0)
                     return
+                item = item.replace("\r", "")  # Windows line endings
                 self.output += item
                 self.on_text(item)
         except queue.Empty:
@@ -109,7 +110,7 @@ class IdleApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.s = load_settings()
-        root.title("Idle: share AI between laptops")
+        root.title("Idle: share AI between devices")
         root.geometry("860x820")
         root.minsize(640, 520)
 
@@ -164,7 +165,7 @@ class IdleApp:
         ttk.Label(shared, text="Network name:").grid(row=0, column=0, sticky="w")
         ttk.Entry(shared, textvariable=self.v["room"], width=32).grid(row=0, column=1, sticky="we", padx=4)
         ttk.Button(shared, text="New network", command=self.new_room).grid(row=0, column=2)
-        ttk.Label(shared, text="Everyone on the same network name can use each other's laptops ('general' by default).",
+        ttk.Label(shared, text="Everyone on the same network name can use each other's devices ('general' by default).",
                   foreground="gray").grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
         ttk.Label(shared, text="Location:").grid(row=2, column=0, sticky="w", pady=(8, 0))
         self.location_names = {f"{code} - {info['name']} ({info['g_co2_per_kwh']} g CO2/kWh)": code
@@ -207,7 +208,7 @@ class IdleApp:
             ttk.Checkbutton(models, text=f"{m}  (~{MODELS[m]['size']}"
                                          + (", images" if MODELS[m]["images"] else "") + ")",
                             variable=self.host_model_vars[m]).grid(row=i // 3, column=i % 3, sticky="w", padx=(0, 16))
-        ttk.Label(f, text="You choose what this laptop downloads. The person asking chooses which model runs "
+        ttk.Label(f, text="You choose what this device downloads. The person asking chooses which model runs "
                           "(if it isn't here yet, it downloads automatically). Keep this window open.",
                   foreground="gray", wraplength=800, justify="left").pack(anchor="w", pady=(6, 0))
         self.host_log = self.build_log(f)
@@ -224,18 +225,18 @@ class IdleApp:
         self.model_info = ttk.Label(pick, text="", foreground="gray")
         self.model_info.pack(side="left")
         ttk.Label(f, text=f"Every helper runs the model you pick here. Splitting and combining always use "
-                          f"{COORDINATOR_MODEL} on this laptop. Missing models download automatically.",
+                          f"{COORDINATOR_MODEL} on this device. Missing models download automatically.",
                   foreground="gray", wraplength=800, justify="left").pack(anchor="w")
 
-        how = ttk.LabelFrame(f, text="Finding laptops (prompts are split and routed automatically)", padding=8)
+        how = ttk.LabelFrame(f, text="Finding devices (prompts are split and routed automatically)", padding=8)
         how.pack(fill="x")
         ttk.Checkbutton(how, text="Also search the Wi-Fi",
                         variable=self.v["search_wifi"]).grid(row=0, column=0, sticky="w")
-        ttk.Button(how, text="Find laptops", command=self.find_peers).grid(row=0, column=3)
+        ttk.Button(how, text="Find devices", command=self.find_peers).grid(row=0, column=3)
         ttk.Label(how, text="Extra IPs:").grid(row=1, column=0, sticky="w", pady=(6, 0))
         ttk.Entry(how, textvariable=self.v["extra_peers"]).grid(
             row=1, column=1, columnspan=2, sticky="we", padx=12, pady=(6, 0))
-        ttk.Button(how, text="Check laptop", command=self.check_peer).grid(row=1, column=3, pady=(6, 0))
+        ttk.Button(how, text="Check device", command=self.check_peer).grid(row=1, column=3, pady=(6, 0))
         how.columnconfigure(2, weight=1)
 
         files = ttk.Frame(f)
@@ -314,19 +315,19 @@ class IdleApp:
     def update_model_debug(self) -> None:
         """Debug bar: which model ran each step of the current prompt, read from the [model] log lines."""
         output = self.ask_runner.output if hasattr(self, "ask_runner") else ""
-        steps: dict[str, str] = {}  # step -> "laptop -> model", in order
+        steps: dict[str, str] = {}  # step -> "device -> model", in order
         for line in output.splitlines():
             if "[model]" not in line:
                 continue
-            if m := re.search(r"plan on this laptop: (\S+)", line):
-                steps["plan"] = f"this laptop → {m.group(1)}"
+            if m := re.search(r"plan on this device: (\S+)", line):
+                steps["plan"] = f"this device → {m.group(1)}"
             elif m := re.search(r"part (\d+) -> (.+?) \[model\] (\S+?):", line):
                 steps[f"part {m.group(1)}"] = f"{m.group(2)} → {m.group(3)} (running)"
             elif m := re.search(r"part (\d+) done by (.+?) in [\d.]+s \[model\] (\S+)", line):
                 steps[f"part {m.group(1)}"] = f"{m.group(2)} → {m.group(3)} ✓"
-            elif m := re.search(r"combine on this laptop: (\S+)", line):
-                steps["combine"] = f"this laptop → {m.group(1)}"
-            elif m := re.search(r"Using (\S+) on '(.+?)'", line):          # "just one laptop"
+            elif m := re.search(r"combine on this device: (\S+)", line):
+                steps["combine"] = f"this device → {m.group(1)}"
+            elif m := re.search(r"Using (\S+) on '(.+?)'", line):          # "just one device"
                 steps["answer"] = f"{m.group(2)} → {m.group(1)} (running)"
             elif m := re.search(r"s on (.+?), \[model\] (\S+?)\)", line):
                 steps["answer"] = f"{m.group(1)} → {m.group(2)} ✓"
@@ -497,11 +498,11 @@ class IdleApp:
         self.find_runner.start(cmd)
 
     def check_peer(self) -> None:
-        """Explain why a laptop can't be reached (runs python -m peer.check)."""
+        """Explain why a device can't be reached (runs python -m peer.check)."""
         extra = self.get("extra_peers").replace(",", " ").split()
         target = extra[0] if extra else ""
         if not target:
-            messagebox.showinfo("Check laptop", "Type the laptop's IP in 'Extra IPs', then press Check laptop.")
+            messagebox.showinfo("Check device", "Type the device's IP in 'Extra IPs', then press Check device.")
             return
         if self.check_runner.running:
             return
@@ -510,7 +511,7 @@ class IdleApp:
         self.check_runner.start(cmd)
 
     def find_finished(self, code: int) -> None:
-        pass  # the list of laptops is shown in the log
+        pass  # the list of devices is shown in the log
 
     # ----- host mode ------------------------------------------------------
     def toggle_host(self) -> None:

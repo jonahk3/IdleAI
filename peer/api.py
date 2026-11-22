@@ -2,14 +2,14 @@
 
     python -m peer.api
 
-A web page can't start programs on your laptop, so this small server runs on YOUR
-laptop and the web app talks to it at http://127.0.0.1:8800. It doesn't do any AI
+A web page can't start programs on your device, so this small server runs on YOUR
+device and the web app talks to it at http://127.0.0.1:8800. It doesn't do any AI
 itself: like the desktop GUI (peer.gui), it runs the same commands you could type
 (peer.server, peer.split, peer.chat, peer.check) and passes their output back.
 
 Safety:
-  - it only listens on 127.0.0.1, so other laptops can't reach it;
-  - it only answers the Idle web app (by web address) and pages on this laptop;
+  - it only listens on 127.0.0.1, so other devices can't reach it;
+  - it only answers the Idle web app (by web address) and pages on this device;
   - every request needs the secret key printed when it starts (the link it prints
     includes it), so other websites can't control it.
 """
@@ -80,7 +80,8 @@ class Job:
             chunk = os.read(proc.stdout.fileno(), 4096)
             if not chunk:
                 break
-            text = decoder.decode(chunk)
+            # Windows ends lines with \r\n: drop the \r so the output reads the same everywhere
+            text = decoder.decode(chunk).replace("\r", "")
             with self.lock:
                 self.output += text
             pending += text
@@ -117,26 +118,26 @@ def models_used(output: str) -> list[dict]:
     for line in output.splitlines():
         if "[model]" not in line:
             continue
-        if m := re.search(r"plan on this laptop: (\S+)", line):
-            steps["plan"] = {"step": "plan", "laptop": "this laptop", "model": m.group(1), "done": True}
+        if m := re.search(r"plan on this device: (\S+)", line):
+            steps["plan"] = {"step": "plan", "device": "this device", "model": m.group(1), "done": True}
         elif m := re.search(r"part (\d+) -> (.+?) \[carbon\] .*?\[model\] (\S+?):", line):
-            steps[f"part {m.group(1)}"] = {"step": f"part {m.group(1)}", "laptop": m.group(2), "model": m.group(3), "done": False}
+            steps[f"part {m.group(1)}"] = {"step": f"part {m.group(1)}", "device": m.group(2), "model": m.group(3), "done": False}
         elif m := re.search(r"part (\d+) done by (.+?) in [\d.]+s \[model\] (\S+)", line):
-            steps[f"part {m.group(1)}"] = {"step": f"part {m.group(1)}", "laptop": m.group(2), "model": m.group(3), "done": True}
-        elif m := re.search(r"combine on this laptop: (\S+)", line):
-            steps["combine"] = {"step": "combine", "laptop": "this laptop", "model": m.group(1), "done": True}
+            steps[f"part {m.group(1)}"] = {"step": f"part {m.group(1)}", "device": m.group(2), "model": m.group(3), "done": True}
+        elif m := re.search(r"combine on this device: (\S+)", line):
+            steps["combine"] = {"step": "combine", "device": "this device", "model": m.group(1), "done": True}
         elif m := re.search(r"Using (\S+) on '(.+?)'", line):
-            steps["answer"] = {"step": "answer", "laptop": m.group(2), "model": m.group(1), "done": False}
+            steps["answer"] = {"step": "answer", "device": m.group(2), "model": m.group(1), "done": False}
         elif m := re.search(r"s on (.+?), \[model\] (\S+?)\)", line):
-            steps["answer"] = {"step": "answer", "laptop": m.group(1), "model": m.group(2), "done": True}
+            steps["answer"] = {"step": "answer", "device": m.group(1), "model": m.group(2), "done": True}
     return list(steps.values())
 
 
 def routing(output: str) -> list[dict]:
-    """Where each part went and how clean that laptop's grid is, from the [carbon] lines."""
+    """Where each part went and how clean that device's grid is, from the [carbon] lines."""
     out = []
     for m in re.finditer(r"part (\d+) -> (.+?) \[carbon\] (\S+) \(([\d.]+) g/kWh\)", output):
-        out.append({"part": int(m.group(1)), "laptop": m.group(2), "location": m.group(3),
+        out.append({"part": int(m.group(1)), "device": m.group(2), "location": m.group(3),
                     "g_co2_per_kwh": float(m.group(4))})
     return out
 
@@ -203,14 +204,14 @@ class Bridge:
         return [f["path"] for f in self.files.values() if not f.get("error")]
 
     def ask_command(self, s: dict, prompt: str) -> list[str]:
-        # Always split: the planner decides how many laptops (1 or more), and carbon-aware
+        # Always split: the planner decides how many devices (1 or more), and carbon-aware
         # routing picks which ones.
         files = self.file_paths()
         cmd = self.base("peer.split") + [prompt, "--model", s["model"]] + self.common(s) + self.peer_args(s)
         return cmd + (["--file", *files] if files else [])
 
     def host_command(self, s: dict) -> list[str]:
-        cmd = self.base("peer.server") + ["--name", s.get("host_name") or "laptop"] + self.common(s)
+        cmd = self.base("peer.server") + ["--name", s.get("host_name") or "device"] + self.common(s)
         models = [m for m in s.get("host_models") or [] if m in MODELS]
         return cmd + (["--models", *models] if models else [])
 
@@ -329,7 +330,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args) -> None:
         pass
 
-    # ----- CORS: only the Idle web app (and pages on this laptop) may talk to the bridge -----
+    # ----- CORS: only the Idle web app (and pages on this device) may talk to the bridge -----
     def allowed_origin(self) -> str | None:
         origin = self.headers.get("Origin")
         if origin and re.match(API_ALLOWED_ORIGINS, origin):
@@ -343,7 +344,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Idle-Token")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-            # Chrome asks before a public website may talk to something on this laptop:
+            # Chrome asks before a public website may talk to something on this device:
             self.send_header("Access-Control-Allow-Private-Network", "true")
 
     def send_json(self, status: int, obj) -> None:
@@ -429,7 +430,7 @@ class Handler(BaseHTTPRequestHandler):
             elif method == "POST" and path == "/api/check":
                 address = str(self.body().get("address", "")).strip()
                 if not address:
-                    raise ValueError("Give the laptop's IP address.")
+                    raise ValueError("Give the device's IP address.")
                 self.send_json(200, b.check(address))
             elif method == "POST" and path == "/api/files":
                 data = self.body()
@@ -473,7 +474,7 @@ def main() -> None:
         raise SystemExit(f"Can't start the bridge on port {args.port} ({e}). Is it already running?")
     server.daemon_threads = True
     link = f"{args.ui}#bridge=http://127.0.0.1:{args.port}&key={token}"
-    log(f"Idle bridge running on http://127.0.0.1:{args.port} (only this laptop can reach it).")
+    log(f"Idle bridge running on http://127.0.0.1:{args.port} (only this device can reach it).")
     log("Open the Idle app with this link (it includes your secret key):")
     print(f"\n    {link}\n", flush=True)
     log("Keep this window open while you use the app. Press Ctrl+C to stop (also stops hosting).")

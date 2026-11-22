@@ -1,7 +1,7 @@
-"""Check why another laptop can't be reached, step by step.
+"""Check why another device can't be reached, step by step.
 
     python -m peer.check 10.122.27.108
-    python -m peer.check 10.122.27.108:8770     (if that laptop uses another port)
+    python -m peer.check 10.122.27.108:8770     (if that device uses another port)
 """
 import argparse
 import http.client
@@ -13,12 +13,12 @@ from peer.discovery import local_ip
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Check the connection to another laptop's peer server.")
-    parser.add_argument("address", help="the other laptop's IP (as its server window shows it)")
+    parser = argparse.ArgumentParser(description="Check the connection to another device's peer server.")
+    parser.add_argument("address", help="the other device's IP (as its server window shows it)")
     args = parser.parse_args()
     host, _, port_text = args.address.partition(":")
     port = int(port_text or PEER_PORT)
-    print(f"This laptop is {local_ip()}. Checking {host}:{port} ...\n")
+    print(f"This device is {local_ip()}. Checking {host}:{port} ...\n")
 
     # Step 1: can we open a connection at all?
     print("1. Opening a connection...", end=" ", flush=True)
@@ -27,13 +27,13 @@ def main() -> None:
         print("OK")
     except socket.timeout:
         print("TIMED OUT")
-        print("\n-> Nothing answered. Usually: wrong IP, the laptops are on different networks/Wi-Fi,")
-        print("   or a firewall on that laptop blocks Python. On Windows: 'Allow an app through Windows")
+        print("\n-> Nothing answered. Usually: wrong IP, the devices are on different networks/Wi-Fi,")
+        print("   or a firewall on that device blocks Python. On Windows: 'Allow an app through Windows")
         print("   Firewall' -> tick Python for Private AND Public. On Mac: allow incoming connections.")
         return
     except OSError as e:
         print(f"FAILED ({e})")
-        print("\n-> The laptop is there but nothing is listening on that port: its peer server isn't")
+        print("\n-> The device is there but nothing is listening on that port: its peer server isn't")
         print("   running, or it uses a different port (check the 'Tell your teammate' line in its window).")
         return
 
@@ -46,8 +46,8 @@ def main() -> None:
         body = resp.read(2000).decode("utf-8", "replace")
     except (http.client.RemoteDisconnected, ConnectionResetError) as e:
         print(f"CONNECTION CLOSED ({e})")
-        print("\n-> Something on that laptop accepted the connection but hung up without answering.")
-        print("   On THAT laptop:")
+        print("\n-> Something on that device accepted the connection but hung up without answering.")
+        print("   On THAT device:")
         print("   a) Look at its server window: is there an ERROR / Traceback? Send it to your team.")
         print("   b) Make sure only ONE server runs there (check other terminal windows and the GUI's")
         print("      Host mode). Close them all, then start one again.")
@@ -77,7 +77,7 @@ def main() -> None:
     print(f"   Location: {info.get('location') or '(not set)'}")
     if info.get("downloading"):
         print(f"   Downloading: {info['downloading']}")
-    print("\nAll good: this laptop can use it.")
+    print("\nAll good: this device can use it.")
 
 
 if __name__ == "__main__":

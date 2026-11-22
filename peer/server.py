@@ -1,11 +1,11 @@
-"""Peer server: lets other laptops on the same network chat with YOUR Ollama.
+"""Peer server: lets other devices on the same network chat with YOUR Ollama.
 
-Run it on the laptop that will lend its computer:
+Run it on the device that will lend its computer:
 
     python -m peer.server --name alice
 
 It listens on port 8765 and forwards chat messages to the Ollama running on
-this laptop. Only models in MODEL_ALLOWLIST are allowed, and requests are
+this device. Only models in MODEL_ALLOWLIST are allowed, and requests are
 treated as plain text data (nothing from the network is ever executed).
 """
 import argparse
@@ -28,7 +28,7 @@ MAX_MESSAGES = 100
 MAX_CHARS_PER_MESSAGE = 400_000           # room for attached text files
 MAX_BODY_BYTES = 120_000_000               # whole request, including images
 
-# Downloads in progress on this laptop: {model: percent or None}
+# Downloads in progress on this device: {model: percent or None}
 PULLING: dict[str, int | None] = {}
 PULL_LOCK = threading.Lock()
 
@@ -127,7 +127,7 @@ class PeerHandler(BaseHTTPRequestHandler):
     # --- endpoints -----------------------------------------------------
     # Every request goes through do_GET/do_POST below, which catch any error, print it in this
     # window and still answer. (Without this, a crash just closes the connection and the other
-    # laptop only sees "Remote end closed connection without response".)
+    # device only sees "Remote end closed connection without response".)
     def send_response(self, *args, **kwargs) -> None:
         self._answered = True
         super().send_response(*args, **kwargs)
@@ -143,7 +143,7 @@ class PeerHandler(BaseHTTPRequestHandler):
         try:
             handler()
         except (BrokenPipeError, ConnectionResetError):
-            pass  # the other laptop went away
+            pass  # the other device went away
         except Exception as e:
             log(f"ERROR while answering {self.client_address[0]} ({self.command} {self.path}):")
             print(traceback.format_exc(), flush=True)
@@ -165,7 +165,7 @@ class PeerHandler(BaseHTTPRequestHandler):
             self.send_json(404, {"error": "not found"})
 
     def handle_pull(self) -> None:
-        """A teammate asks this laptop to download an (allowlisted) model."""
+        """A teammate asks this device to download an (allowlisted) model."""
         try:
             length = int(self.headers.get("Content-Length", 0))
             model = json.loads(self.rfile.read(min(length, 10_000)) or b"{}").get("model")
@@ -177,7 +177,7 @@ class PeerHandler(BaseHTTPRequestHandler):
         if self.fake or model in installed_models():
             self.send_json(200, {"status": "already have it"})
             return
-        log(f"{self.client_address[0]} asked this laptop to download {model}")
+        log(f"{self.client_address[0]} asked this device to download {model}")
         started = start_pull(model)
         self.send_json(200, {"status": "downloading" if started else "already downloading"})
 
@@ -201,7 +201,7 @@ class PeerHandler(BaseHTTPRequestHandler):
         who = self.client_address[0]
         preview = messages[-1]["content"][:60].replace("\n", " ")
         pics = len(messages[-1].get("images", []))
-        # The model is always the one the asking laptop chose; the host only decides what's downloaded.
+        # The model is always the one the asking device chose; the host only decides what's downloaded.
         log(f"{who} asked for [model] {model}: \"{preview}\"" + (f" (+{pics} image(s))" if pics else ""))
 
         # Reply is streamed back as one JSON object per line.
@@ -247,12 +247,12 @@ class PeerServer(ThreadingHTTPServer):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Share this laptop's Ollama with peers on the network.")
+    parser = argparse.ArgumentParser(description="Share this device's Ollama with peers on the network.")
     parser.add_argument("--name", default=socket.gethostname(), help="friendly name shown to peers")
     parser.add_argument("--port", type=int, default=PEER_PORT)
     parser.add_argument("--fake", action="store_true", help=argparse.SUPPRESS)  # developer testing only
     parser.add_argument("--location", type=str.upper, choices=list(carbon.provinces()),
-                        help="province/territory this laptop is in (fake for now), e.g. QC")
+                        help="province/territory this device is in (fake for now), e.g. QC")
     parser.add_argument("--room", help="network name to join (remembered; default: general)")
     parser.add_argument("--models", nargs="*", default=[],
                         help=f"models to download (if needed) and share: {' '.join(MODEL_ALLOWLIST)}")
@@ -286,11 +286,11 @@ def main() -> None:
         server = PeerServer(("0.0.0.0", args.port), PeerHandler)
     except OSError as e:
         log(f"Can't start: port {args.port} is already in use ({e}).")
-        log("  Another peer server (or another program) is already running on this laptop.")
+        log("  Another peer server (or another program) is already running on this device.")
         log("  Close the other one (check other terminals and the GUI's Host mode), or use --port 8770.")
         raise SystemExit(1)
     if not start_responder(args.name, args.port):
-        log("WARNING: discovery port busy, so peer.split can't auto-find this laptop (use --peers).")
+        log("WARNING: discovery port busy, so peer.split can't auto-find this device (use --peers).")
     log(f"Peer '{args.name}' is up.")
     log(f"Network: {room}")
     start_announcer(room, args.name, args.port)

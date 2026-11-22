@@ -1,13 +1,13 @@
 """How many credits a piece of work is worth.
 
-The helper that does the work EARNS this amount, and the laptop that asked SPENDS
+The helper that does the work EARNS this amount, and the device that asked SPENDS
 the same amount. Both sides use this one function, so they always agree.
 
 - Normally it's based on tokens: what the model read + what it wrote (Ollama
   reports both with every answer).
 - If a model doesn't report tokens, compute time is used instead.
 
-Work done on your own laptop (planning, combining, your own part) is free:
+Work done on your own device (planning, combining, your own part) is free:
 you'd be paying yourself.
 """
 from peer.config import CREDITS_PER_1000_TOKENS, CREDITS_PER_MINUTE

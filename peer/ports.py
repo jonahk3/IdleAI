@@ -124,8 +124,8 @@ def choose_port(preferred: int, log) -> int:
         else:
             log(f"Port {preferred} is busy ({detail}), and it isn't a peer server, so it was left alone.")
     elif kind == "peer":
-        log(f"Another peer server ('{detail}') is already running on port {preferred} on this laptop.")
-        log("  You only need one per laptop; close the other one if you didn't mean to run two.")
+        log(f"Another peer server ('{detail}') is already running on port {preferred} on this device.")
+        log("  You only need one per device; close the other one if you didn't mean to run two.")
     else:
         log(f"Port {preferred} is used by another program ({detail}).")
     port = next_free_port()

@@ -1,13 +1,13 @@
-"""Split one big prompt across every laptop on the network, then put it back together.
+"""Split one big prompt across every device on the network, then put it back together.
 
     python -m peer.split "Give me the first 30 prime numbers"
 
 What happens (the prompts for each step live in peer/prompts.py):
-  1. FIND:    this laptop + every peer server in the room / on the Wi-Fi.
-  2. PLAN:    this laptop's coordinator model (llama3.2:3b) writes one self-contained instruction per helper
+  1. FIND:    this device + every peer server in the room / on the Wi-Fi.
+  2. PLAN:    this device's coordinator model (llama3.2:3b) writes one self-contained instruction per helper
               (only as many as make sense; short tasks get one).
-  3. RUN:     every instruction goes to a different laptop at the same time. If a
-              laptop fails, this laptop redoes its part.
+  3. RUN:     every instruction goes to a different device at the same time. If a
+              device fails, this device redoes its part.
   4. COMBINE: the coordinator model turns the helpers' answers into one final answer.
   The helpers run the model you pick with --model.
   Everything is shown and saved in results/.
@@ -45,16 +45,16 @@ class Device:
 
     def run_reported(self, model: str, messages: list[dict]) -> tuple[str, str, dict | None]:
         """Run, and also return the model that actually answered and the usage to pay for
-        (None = free: work on this laptop costs nothing)."""
+        (None = free: work on this device costs nothing)."""
         return self.run(model, messages), model, None
 
 
 class LocalDevice(Device):
-    """This laptop's own Ollama."""
+    """This device's own Ollama."""
 
     def __init__(self, fake: bool = False, location: str | None = None) -> None:
         self.location = location
-        self.name, self.where, self.fake = "this laptop", "localhost", fake
+        self.name, self.where, self.fake = "this device", "localhost", fake
 
     def run(self, model: str, messages: list[dict], json_format: bool | dict = False,
             options: dict | None = None) -> str:
@@ -65,7 +65,7 @@ class LocalDevice(Device):
 
 
 class RemoteDevice(Device):
-    """Another laptop running `python -m peer.server`."""
+    """Another device running `python -m peer.server`."""
 
     def __init__(self, name: str, ip: str, port: int, location: str | None = None) -> None:
         self.name, self.where, self.location = name, f"{ip}:{port}", location
@@ -87,7 +87,7 @@ class RemoteDevice(Device):
 
 
 def load_known_peers() -> list[tuple[str, int]]:
-    """Laptops that worked before (saved in known_peers.json)."""
+    """Devices that worked before (saved in known_peers.json)."""
     try:
         data = json.loads(Path(KNOWN_PEERS_FILE).read_text())
         return [(str(d["ip"]), int(d["port"])) for d in data]
@@ -116,15 +116,15 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
         candidates.append((host, int(port or PEER_PORT)))
     known = load_known_peers()
     if known:
-        log(f"Trying {len(known)} laptop(s) that worked before ({KNOWN_PEERS_FILE})")
+        log(f"Trying {len(known)} device(s) that worked before ({KNOWN_PEERS_FILE})")
         candidates += known
     me = {local_ip(), "127.0.0.1"}
     if room:
         listed = [d for d in lookup(room) if d["ip"] not in me]
-        log(f"Network '{room}': {len(listed)} other laptop(s) listed")
+        log(f"Network '{room}': {len(listed)} other device(s) listed")
         candidates += [(d["ip"], d["port"]) for d in listed]
     if use_discovery and not candidates:
-        log("Looking for other laptops on the Wi-Fi...")
+        log("Looking for other devices on the Wi-Fi...")
         candidates += [(d["ip"], d["port"]) for d in discover() if d["ip"] not in me]
 
     candidates = list(dict.fromkeys(candidates))  # remove duplicates, keep order
@@ -150,14 +150,14 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
     if working:
         save_known_peers(working)
     if len(devices) == 1:
-        log("No other laptops found. Check that `python -m peer.server` is running on them,")
+        log("No other devices found. Check that `python -m peer.server` is running on them,")
         log("you're on the same Wi-Fi, and try `--peers <IP>` using the IP their server printed.")
     return devices
 
 
 # ---------------------------------------------------------------- carbon-aware routing
 def choose_cleanest(devices: list[Device], parts: int) -> list[Device]:
-    """The `parts` laptops with the lowest CO2 per kWh. Ties: this laptop first (it's free),
+    """The `parts` devices with the lowest CO2 per kWh. Ties: this device first (it's free),
     then the order they were found."""
     ranked = sorted(devices, key=lambda d: (carbon.intensity(d.location), not isinstance(d, LocalDevice)))
     log("  [carbon] cleanest first: " + ", ".join(f"{d.name} {carbon.label(d.location)}" for d in ranked))
@@ -170,20 +170,20 @@ def choose_cleanest(devices: list[Device], parts: int) -> list[Device]:
 
 # ---------------------------------------------------------------- plan, run, combine
 def plan(local: LocalDevice, model: str, task: str, available: int, att: Attachments) -> list[str]:
-    """Ask this laptop's model for one self-contained instruction per helper."""
+    """Ask this device's model for one self-contained instruction per helper."""
     if available == 1:
         return [task]
     if local.fake:
         return [f"(fake) part {i + 1} of {available} of: {task}" for i in range(available)]
     # Step 1: how many independent pieces does the task really have? (Asked without mentioning
-    # the laptops, so the model isn't tempted to use them all.) Code decides the number of parts.
+    # the devices, so the model isn't tempted to use them all.) Code decides the number of parts.
     pieces = count_pieces(local, model, task, att)
     wanted = min(pieces, available) if pieces else 1  # can't tell: don't split
     if pieces:
         log(f"  the task has {pieces} independent piece(s) -> {wanted} part(s)"
-            + (f" (only {available} laptop(s) available)" if pieces > available else ""))
+            + (f" (only {available} device(s) available)" if pieces > available else ""))
     if wanted == 1:
-        return [task]  # nothing to split: the whole task goes to the cleanest laptop
+        return [task]  # nothing to split: the whole task goes to the cleanest device
     # Step 2: write exactly that many parts.
     messages = [
         {"role": "system", "content": prompts.PLANNER_SYSTEM},
@@ -199,12 +199,12 @@ def plan(local: LocalDevice, model: str, task: str, available: int, att: Attachm
             reply = local.run(model, messages, json_format=True, options=options)
         parts = clean_parts(json.loads(reply)["parts"])
     except (ValueError, KeyError, TypeError) as e:
-        log(f"  planner gave an unusable answer ({e}); one laptop will do the whole task")
+        log(f"  planner gave an unusable answer ({e}); one device will do the whole task")
         return [task]
     if not parts:
         return [task]
-    if len(parts) > available:  # more parts than laptops: share them out evenly, in order
-        log(f"  planner wrote {len(parts)} parts for {available} laptop(s); grouping them")
+    if len(parts) > available:  # more parts than devices: share them out evenly, in order
+        log(f"  planner wrote {len(parts)} parts for {available} device(s); grouping them")
         size, extra = divmod(len(parts), available)
         groups, start = [], 0
         for i in range(available):
@@ -229,7 +229,7 @@ def count_pieces(local: LocalDevice, model: str, task: str, att: Attachments) ->
             reply = local.run(model, messages, json_format=True, options=options)
         return max(1, int(json.loads(reply)["pieces"]))
     except (ValueError, KeyError, TypeError) as e:
-        log(f"  couldn't count the pieces ({e}); one laptop will do the whole task")
+        log(f"  couldn't count the pieces ({e}); one device will do the whole task")
         return None
 
 
@@ -252,10 +252,10 @@ class PartResult:
     text: str = ""
     seconds: float = 0.0
     model: str = ""                 # the model that actually answered (reported by the helper)
-    credits: float = 0.0            # what this part cost (0 if this laptop did it)
+    credits: float = 0.0            # what this part cost (0 if this device did it)
     credit_detail: str = ""
     location: str | None = None     # where it ran
-    co2_grams: float = 0.0          # rough estimate: laptop power x time x grid intensity
+    co2_grams: float = 0.0          # rough estimate: device power x time x grid intensity
     notes: list[str] = field(default_factory=list)
 
 
@@ -272,7 +272,7 @@ def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice
     except Exception as e:  # device died, Wi-Fi dropped, Ollama error...
         if device is fallback:
             raise
-        log(f"  part {index + 1}: '{device.name}' failed ({e}); redoing it on this laptop")
+        log(f"  part {index + 1}: '{device.name}' failed ({e}); redoing it on this device")
         result.notes.append(f"'{device.name}' failed: {e}")
         result.device, result.location = fallback.name, fallback.location
         text, result.model, usage = fallback.run_reported(model, messages)
@@ -286,7 +286,7 @@ def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice
 
 
 def combine(local: LocalDevice, model: str, task: str, parts: list[PartResult], att: Attachments) -> str:
-    """This laptop's model writes the final answer from the helpers' answers."""
+    """This device's model writes the final answer from the helpers' answers."""
     messages = [
         {"role": "system", "content": prompts.COMBINE_SYSTEM},
         # No files here: the combiner may only use what the helpers wrote.
@@ -311,30 +311,30 @@ def save(task: str, final: str, attached: list[str]) -> Path:
 
 # ---------------------------------------------------------------- main
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Split a prompt across laptops on the network.")
+    parser = argparse.ArgumentParser(description="Split a prompt across devices on the network.")
     parser.add_argument("prompt", nargs="?", help="what to ask (you'll be asked if you leave it out)")
     parser.add_argument("--model", default=DEFAULT_MODEL, choices=list(MODELS),
                         help="the model the helpers run for each part")
     parser.add_argument("--coordinator", default=COORDINATOR_MODEL, choices=list(MODELS),
-                        help="the model this laptop uses to plan and combine (default: %(default)s)")
+                        help="the model this device uses to plan and combine (default: %(default)s)")
     parser.add_argument("--location", type=str.upper, choices=list(carbon.provinces()),
-                        help="province/territory this laptop is in (fake for now), e.g. QC")
+                        help="province/territory this device is in (fake for now), e.g. QC")
     parser.add_argument("--file", nargs="*", default=[], help="files or images to attach to the prompt")
     parser.add_argument("--peers", nargs="*", default=[], help="extra peer IPs, e.g. 192.168.1.42")
     parser.add_argument("--no-discover", action="store_true", help="only use --peers, don't search the Wi-Fi")
     parser.add_argument("--fake", action="store_true", help=argparse.SUPPRESS)  # developer testing only
-    parser.add_argument("--forget", action="store_true", help="forget saved laptops (known_peers.json)")
-    parser.add_argument("--room", help="network name to find laptops in (remembered; default: general)")
-    parser.add_argument("--list", action="store_true", help="just list the laptops that can be used, then exit")
+    parser.add_argument("--forget", action="store_true", help="forget saved devices (known_peers.json)")
+    parser.add_argument("--room", help="network name to find devices in (remembered; default: general)")
+    parser.add_argument("--list", action="store_true", help="just list the devices that can be used, then exit")
     args = parser.parse_args()
     room = resolve_room(args.room)
 
     if args.forget:
         Path(KNOWN_PEERS_FILE).unlink(missing_ok=True)
-        log("Forgot saved laptops.")
+        log("Forgot saved devices.")
     if args.list:
         devices = find_devices(args.model, args.peers, not args.no_discover, True, room)[1:]
-        log(f"{len(devices)} other laptop(s) ready:")
+        log(f"{len(devices)} other device(s) ready:")
         for d in devices:
             log(f"  - {d.name} ({d.where}) [carbon] {carbon.label(d.location)}")
         # One machine-readable line, used by the GUI to fill its peer list.
@@ -359,33 +359,33 @@ def main() -> None:
     if not args.fake and not ollama.ensure_model(args.model, log):  # downloads it if needed
         return
 
-    # The asking laptop picks the helpers' model; every helper uses exactly this one (hosts only
+    # The asking device picks the helpers' model; every helper uses exactly this one (hosts only
     # choose which models they download). Planning and combining use the coordinator model.
     coordinator = args.coordinator
     log(f"[model] You chose {args.model} for the parts. Planning and combining use {coordinator}.")
     t0 = time.time()
-    if not args.fake:  # load the model into memory while we look for laptops
+    if not args.fake:  # load the model into memory while we look for devices
         threading.Thread(target=ollama.warm_up, args=(args.model,), daemon=True).start()
     devices = find_devices(args.model, args.peers, not args.no_discover, args.fake, room)
-    devices[0] = local  # this laptop, with its location
+    devices[0] = local  # this device, with its location
     log(f"{len(devices)} device(s) available:")
     for d in devices:
         log(f"  - {d.name} ({d.where}) [carbon] {carbon.label(d.location)}")
     if len(devices) > 1 and coordinator != args.model and not args.fake:
         if not ollama.ensure_model(coordinator, log):  # downloads it if needed
-            log(f"  can't plan without {coordinator}; one laptop will do the whole task")
+            log(f"  can't plan without {coordinator}; one device will do the whole task")
             devices = devices[:1]
         else:
             threading.Thread(target=ollama.warm_up, args=(coordinator,), daemon=True).start()
 
-    log(f"PLAN: this laptop is writing one instruction per helper ({len(devices)} laptop(s) available)...")
+    log(f"PLAN: this device is writing one instruction per helper ({len(devices)} device(s) available)...")
     if len(devices) > 1:
-        log(f"  [model] plan on this laptop: {coordinator}")
+        log(f"  [model] plan on this device: {coordinator}")
     plan_start = time.time()
     instructions = plan(local, coordinator, prompt, len(devices), att)
     log(f"  planned {len(instructions)} part(s) in {time.time() - plan_start:.1f}s")
     # Carbon-aware routing (decided here in code, not by the planner): the parts go to the
-    # laptops on the cleanest grids. Even a single part leaves this laptop if a cleaner one exists.
+    # devices on the cleanest grids. Even a single part leaves this device if a cleaner one exists.
     workers = choose_cleanest(devices, len(instructions))
     for i, (text, d) in enumerate(zip(instructions, workers)):
         log(f"  part {i + 1} -> {d.name} [carbon] {carbon.label(d.location)} [model] {args.model}: {text}")
@@ -406,8 +406,8 @@ def main() -> None:
     parts.sort(key=lambda p: p.index)
 
     if len(parts) > 1:
-        log("COMBINE: this laptop is writing the final answer from the helpers' answers...")
-        log(f"  [model] combine on this laptop: {coordinator}")
+        log("COMBINE: this device is writing the final answer from the helpers' answers...")
+        log(f"  [model] combine on this device: {coordinator}")
         combine_start = time.time()
         final = combine(local, coordinator, prompt, parts, att)
         log(f"  combined in {time.time() - combine_start:.1f}s")
@@ -421,13 +421,13 @@ def main() -> None:
     print(final)
     print("\n" + "=" * 70)
     spent = sum(p.credits for p in parts)
-    log(f"Credits for this prompt: {spent:.2f} spent on helpers (work on this laptop is free)")
+    log(f"Credits for this prompt: {spent:.2f} spent on helpers (work on this device is free)")
     grams = sum(p.co2_grams for p in parts)
     worst = max(carbon.intensity(d.location) for d in devices)
     worst_grams = sum(p.co2_grams / max(carbon.intensity(p.location), 1e-9) * worst for p in parts)
-    log(f"[carbon] about {grams:.3f} g CO2 for the parts (estimate); the dirtiest available laptop "
+    log(f"[carbon] about {grams:.3f} g CO2 for the parts (estimate); the dirtiest available device "
         f"would have used about {worst_grams:.3f} g")
-    log(f"Done in {total_secs}s using {len(workers)} laptop(s). Saved to {path}")
+    log(f"Done in {total_secs}s using {len(workers)} device(s). Saved to {path}")
 
 
 if __name__ == "__main__":

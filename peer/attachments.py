@@ -3,7 +3,7 @@
 - Images (png, jpg, ...) are sent to the model as pictures. Only models with
   "images": True in peer/config.py MODELS can look at them.
 - PDFs: their text is extracted (needs `python -m pip install pypdf` on the
-  laptop that attaches them) and added to the prompt like a text file.
+  device that attaches them) and added to the prompt like a text file.
 - Anything else is read as text (txt, md, csv, json, code, ...) and added to
   the prompt. Other binary files (Word, Excel, zip, audio...) are refused for now.
 

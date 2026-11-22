@@ -1,4 +1,4 @@
-"""Talking to the Ollama running on THIS laptop."""
+"""Talking to the Ollama running on THIS device."""
 import json
 import urllib.error
 import urllib.request
@@ -69,11 +69,11 @@ def pull(model: str, on_progress=None) -> None:
 
 
 def ensure_model(model: str, log) -> bool:
-    """Download the model if this laptop doesn't have it yet. Returns True when it's ready."""
+    """Download the model if this device doesn't have it yet. Returns True when it's ready."""
     if model in installed_models():
         return True
     if not ollama_running():
-        log("Ollama isn't running on this laptop. Open the Ollama app and try again.")
+        log("Ollama isn't running on this device. Open the Ollama app and try again.")
         return False
     size = MODELS.get(model, {}).get("size", "?")
     log(f"Downloading {model} (one time, about {size}). This can take a while...")

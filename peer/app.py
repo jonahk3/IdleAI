@@ -5,7 +5,7 @@
 
 It opens in its own desktop window (like the simple Tkinter window). Without
 pywebview it opens in your browser instead (or use --browser). Either way only
-this laptop can reach it. Like peer.gui it runs the same commands you could type
+this device can reach it. Like peer.gui it runs the same commands you could type
 (peer.server, peer.split, peer.chat, peer.check) and shows what they print, plus
 a clear view of where each part went, which model ran it, CO2 and credits.
 """
@@ -180,7 +180,7 @@ def index() -> None:
                           ).classes("w-80").props("outlined dense")
                 model_about = ui.label().classes("text-sm opacity-70")
                 ui.space()
-                ui.label(f"Split across laptops on the cleanest grids · planned by {COORDINATOR_MODEL}"
+                ui.label(f"Split across devices on the cleanest grids · planned by {COORDINATOR_MODEL}"
                          ).classes("text-xs opacity-50")
 
             chat_scroll = ui.scroll_area().classes("w-full h-[56vh] idle-soft")
@@ -214,8 +214,8 @@ def index() -> None:
         # ================================================================ HOST
         with ui.tab_panel(t_host).classes("gap-4"):
             with ui.card().classes("idle-card w-full"):
-                ui.label("Share this laptop's AI").classes("idle-title text-xl")
-                ui.label("You choose what this laptop downloads. The person asking chooses which model runs "
+                ui.label("Share this device's AI").classes("idle-title text-xl")
+                ui.label("You choose what this device downloads. The person asking chooses which model runs "
                          "(missing ones download automatically).").classes("text-sm opacity-70")
                 with ui.row().classes("w-full items-end gap-6"):
                     ui.input("Your name", value=s["host_name"],
@@ -245,7 +245,7 @@ def index() -> None:
                                               ).classes("grow").props("outlined dense")
                         ui.button("New private network", on_click=lambda: room_input.set_value(new_room_name())
                                   ).props("outline no-caps")
-                    ui.label("Everyone on the same network name can use each other's laptops. 'general' is "
+                    ui.label("Everyone on the same network name can use each other's devices. 'general' is "
                              "open to all; make a private name for just your team.").classes("text-xs opacity-60")
                 with ui.card().classes("idle-card w-1/2"):
                     ui.label("Location").classes("idle-caption")
@@ -268,17 +268,17 @@ def index() -> None:
                             ui.label(f"{g}").classes("w-10 text-right text-sm")
             with ui.row().classes("w-full gap-4 items-stretch no-wrap"):
                 with ui.card().classes("idle-card w-1/2"):
-                    ui.label("Laptops on your network").classes("idle-caption")
-                    ui.input("Extra IPs (if a laptop isn't on the network)", value=s["extra_peers"],
+                    ui.label("Devices on your network").classes("idle-caption")
+                    ui.input("Extra IPs (if a device isn't on the network)", value=s["extra_peers"],
                              on_change=lambda e: save("extra_peers", e.value)).classes("w-full").props("outlined dense")
                     ui.switch("Also search the Wi-Fi", value=s["search_wifi"], on_change=lambda e: save("search_wifi", e.value))
-                    ui.button("Find laptops", icon="search", on_click=lambda: find_laptops()).props("unelevated no-caps color=dark")
+                    ui.button("Find devices", icon="search", on_click=lambda: find_devices()).props("unelevated no-caps color=dark")
                     peers_box = ui.column().classes("w-full gap-1")
                 with ui.card().classes("idle-card w-1/2"):
-                    ui.label("Check a laptop").classes("idle-caption")
+                    ui.label("Check a device").classes("idle-caption")
                     with ui.row().classes("w-full items-center no-wrap"):
                         check_input = ui.input(placeholder="10.122.27.108 or 10.122.27.108:8770").classes("grow").props("outlined dense")
-                        ui.button("Check", on_click=lambda: check_laptop()).props("outline no-caps")
+                        ui.button("Check", on_click=lambda: check_device()).props("outline no-caps")
                     check_output = ui.code("", language="text").classes("w-full text-xs")
                     status_line = ui.label().classes("text-sm opacity-70")
 
@@ -306,7 +306,7 @@ def index() -> None:
                 with ui.column().classes("w-full items-center py-16 gap-2 opacity-70"):
                     ui.image("/assets/icon.png").classes("w-20 h-20")
                     ui.label("Ask anything.").classes("idle-title text-xl")
-                    ui.label("Your prompt is split across the laptops on your network, cleanest power grids "
+                    ui.label("Your prompt is split across the devices on your network, cleanest power grids "
                              "first, and Idle replies here.").classes("text-sm text-center max-w-md")
             for turn in conversation:
                 chat_bubbles(turn["prompt"], turn["attached"], turn["answer"])
@@ -333,13 +333,13 @@ def index() -> None:
             return "Putting the answers together…"
         if parts:
             done = sum(st["done"] for st in parts)
-            where = ", ".join(sorted({st["laptop"] for st in parts}))
+            where = ", ".join(sorted({st["device"] for st in parts}))
             return f"Working on {len(parts)} part(s): {done} done ({where})"
         if "Downloading" in output:
             return "Downloading the model (one time)…"
         if any(st["step"] == "plan" for st in steps) or "PLAN:" in output:
             return "Planning how to split it…"
-        return "Finding laptops on your network…"
+        return "Finding devices on your network…"
 
     def finish_turn(turn: dict) -> None:
         output = bridge.ask.output
@@ -349,16 +349,16 @@ def index() -> None:
             answer = "Sorry, that didn't finish. " + (" ".join(last_lines)[-300:] if last_lines else "")
         steps = models_used(output)
         where = {f"part {r['part']}": r for r in routing(output)}
-        laptops = sorted({st["laptop"] for st in steps if st["step"].startswith("part")})
+        devices = sorted({st["device"] for st in steps if st["step"].startswith("part")})
         co2 = co2_summary(output)
         spent = re.search(r"Credits for this prompt: ([\d.]+) spent", output)
-        meta = [f"{len(laptops)} laptop(s)"] if laptops else []
+        meta = [f"{len(devices)} device(s)"] if devices else []
         if co2:
             meta.append(f"~{co2['grams']:.3f} g CO2")
         if spent:
             meta.append(f"{float(spent.group(1)):.2f} credits")
         turn.update(answer=answer, meta=" · ".join(meta),
-                    details=[f"{st['step']}: {st['laptop']} · {st['model']}"
+                    details=[f"{st['step']}: {st['device']} · {st['model']}"
                              + (f" · {where[st['step']]['location']} ({where[st['step']]['g_co2_per_kwh']:g} g/kWh)"
                                 if st["step"] in where else "") for st in steps],
                     log=output)
@@ -430,15 +430,15 @@ def index() -> None:
         current = [m for m in setting("host_models") if m != model]
         save("host_models", current + [model] if on else current)
 
-    async def find_laptops() -> None:
-        n = ui.notification("Looking for laptops…", spinner=True, timeout=None)
+    async def find_devices() -> None:
+        n = ui.notification("Looking for devices…", spinner=True, timeout=None)
         result = await run.io_bound(bridge.find_peers, load_settings())
         n.dismiss()
         peers = result["peers"]
         peers_box.clear()
         with peers_box:
             if not peers:
-                ui.label("No other laptops found. Check the network name, or add their IP above.").classes("text-sm opacity-60")
+                ui.label("No other devices found. Check the network name, or add their IP above.").classes("text-sm opacity-60")
             for p in peers:
                 g = carbon.intensity(p.get("location")) if p.get("location") else None
                 with ui.row().classes("w-full items-center no-wrap gap-2 idle-soft px-3 py-1"):
@@ -447,11 +447,11 @@ def index() -> None:
                     ui.label(p["address"]).classes("text-xs opacity-60")
                     ui.space()
                     ui.badge(carbon.label(p.get("location")), color=grid_colour(g))
-        ui.notify(f"Found {len(peers)} other laptop(s)")
+        ui.notify(f"Found {len(peers)} other device(s)")
 
-    async def check_laptop() -> None:
+    async def check_device() -> None:
         if not (check_input.value or "").strip():
-            ui.notify("Type the laptop's IP first", type="warning")
+            ui.notify("Type the device's IP first", type="warning")
             return
         check_output.set_content("Checking…")
         result = await run.io_bound(bridge.check, check_input.value.strip())
@@ -512,7 +512,7 @@ def index() -> None:
         host_button.props(f"color={'negative' if host_running else 'dark'} icon={'stop' if host_running else 'play_arrow'}")
         host_earned.set_text(f"earned this session: {c['earned']:.2f} credits")
         host_feed.update()
-        status_line.set_text(("Ollama is running" if state["ollama_running"] else "Ollama isn't running on this laptop")
+        status_line.set_text(("Ollama is running" if state["ollama_running"] else "Ollama isn't running on this device")
                              + " · PDF support " + ("installed" if state["pdf_supported"] else "not installed"))
 
     render_chat()

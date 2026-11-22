@@ -1,15 +1,15 @@
 """All the instructions we give the AI models, in one place so they're easy to tune.
 
 How the system runs a prompt:
-  1. PLAN:    this laptop's model writes one instruction per helper laptop.
-  2. RUN:     every instruction goes to a different laptop AT THE SAME TIME.
+  1. PLAN:    this device's model writes one instruction per helper device.
+  2. RUN:     every instruction goes to a different device AT THE SAME TIME.
               Helpers see only their own instruction, never each other's work.
-  3. COMBINE: this laptop's model turns the helpers' answers into one final answer.
+  3. COMBINE: this device's model turns the helpers' answers into one final answer.
 """
 
 # ---------------------------------------------------------------- 0. count
-# Asked BEFORE planning, and never told how many laptops exist (small models tend to use
-# every helper they hear about). Code then uses min(pieces, laptops) parts.
+# Asked BEFORE planning, and never told how many devices exist (small models tend to use
+# every helper they hear about). Code then uses min(pieces, devices) parts.
 COUNT_SCHEMA = {
     "type": "object",
     "properties": {"pieces": {"type": "integer", "minimum": 1}},
@@ -78,17 +78,18 @@ Reply with JSON only: {"parts": ["...", "..."]}"""
 
 
 def planner_user(task: str, parts: int, attached: list[str] | None = None) -> str:
-    # `parts` was decided in code from the count step: as many as needed, never more than laptops.
+    # `parts` was decided in code from the count step: as many as needed, never more than devices.
     text = (f"Task: {task}\n\n"
             f"Split it into exactly {parts} independent parts, using only as many helpers as needed "
             f"({parts}). Make the parts about the same amount of work.")
     text += "\n\nRemember: only plan the parts. Do not work out any of the answer yourself."
     if attached:
+        first = attached[0].split(" (")[0]  # the real name of the first file, used in the example
         text += ("\n\nThe user attached these files:\n" + "\n".join(f"- {f}" for f in attached)
                  + "\nYou can't see what is inside them. Every helper receives ALL of these files in full, "
-                 "together with its part, so a part can say which file(s) to work on by name "
-                 "(e.g. \"Rate Resume.pdf on a scale of 1 to 10\"). Use the type and length to decide how to "
-                 "split the work, e.g. one long file per helper.")
+                 "together with its part, so a part must name the exact file(s) to work on, spelled exactly "
+                 f"as above (e.g. \"... {first} ...\"). Never invent file names. Use the type and length to "
+                 "decide how to split the work, e.g. one long file per helper.")
     return text
 
 

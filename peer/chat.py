@@ -1,9 +1,9 @@
-"""Chat client: talk to an AI model running on ANOTHER laptop.
+"""Chat client: talk to an AI model running on ANOTHER device.
 
     python -m peer.chat --peer 192.168.1.42
 
 Type a message and press Enter. Commands:
-    /models          list models the other laptop is sharing
+    /models          list models the other device is sharing
     /model NAME      switch model
     /reset           forget the conversation so far
     /quit            exit
@@ -38,7 +38,7 @@ class PeerClient:
             raise OSError("something answered that isn't a peer server") from None
 
     def request_pull(self, model: str) -> str:
-        """Ask the other laptop to download a model. Returns its status message."""
+        """Ask the other device to download a model. Returns its status message."""
         req = urllib.request.Request(f"{self.base}/pull", data=json.dumps({"model": model}).encode(),
                                      headers={"Content-Type": "application/json"})
         try:
@@ -70,13 +70,13 @@ class PeerClient:
                     yield part
                     return
                 yield part["token"]
-        # The stream ended without a "done" message: the other laptop went away mid-reply.
+        # The stream ended without a "done" message: the other device went away mid-reply.
         raise RuntimeError("connection lost before the reply finished")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Chat with a model on another laptop.")
-    parser.add_argument("--peer", required=True, help="other laptop's IP, e.g. 192.168.1.42")
+    parser = argparse.ArgumentParser(description="Chat with a model on another device.")
+    parser.add_argument("--peer", required=True, help="other device's IP, e.g. 192.168.1.42")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--prompt", help="ask one question, print the answer, and exit")
     parser.add_argument("--file", nargs="*", default=[], help="files or images to attach to your (first) message")

@@ -1,4 +1,4 @@
-"""Carbon data: how clean each laptop's electricity is.
+"""Carbon data: how clean each device's electricity is.
 
 Everything else calls the functions here and never reads the data file directly,
 so a live source (e.g. Electricity Maps) can replace provinces.json later without
@@ -21,7 +21,7 @@ def provinces() -> dict[str, dict]:
 
 
 def intensity(location: str | None) -> float:
-    """Grams of CO2 per kWh where this laptop is (unknown = treated as the dirtiest)."""
+    """Grams of CO2 per kWh where this device is (unknown = treated as the dirtiest)."""
     info = provinces().get((location or "").upper())
     return float(info["g_co2_per_kwh"]) if info else float(UNKNOWN_G_CO2_PER_KWH)
 
@@ -33,6 +33,6 @@ def label(location: str | None) -> str:
 
 
 def estimate_grams(location: str | None, seconds: float) -> float:
-    """Rough CO2 for running a model this long here: laptop power x time x grid intensity."""
+    """Rough CO2 for running a model this long here: device power x time x grid intensity."""
     kwh = LAPTOP_WATTS * seconds / 3600 / 1000
     return kwh * intensity(location)

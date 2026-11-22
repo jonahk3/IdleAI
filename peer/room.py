@@ -1,4 +1,4 @@
-"""Rooms: a shared online notice board where laptops post their address.
+"""Rooms: a shared online notice board where devices post their address.
 
 Every peer server posts "I'm <name> at <ip>:<port>" to a room on ntfy.sh (a free
 public message service). peer.split reads the room and connects to everyone
