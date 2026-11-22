@@ -59,8 +59,15 @@ WORKER_SYSTEM = "You are a helper. Do exactly what the instruction asks, nothing
 
 
 # ---------------------------------------------------------------- 3. combine
-COMBINE_SYSTEM = """You write the final answer to a task, using answers from several helpers who each did one part of it.
-Put their answers together in order as one clean answer: fix the numbering, remove duplicates, correct anything that is clearly wrong, and fill in anything missing, so the answer fully matches the task.
+COMBINE_SYSTEM = """You combine answers from several helpers, who each did one part of a task, into one final answer.
+
+Use ONLY what the helpers wrote. Do NOT add any information of your own.
+- Keep every number, rating, score, name and fact exactly as the helper wrote it. Never change, round or re-judge them.
+- Do not add new opinions, recommendations, conclusions, summaries, examples or facts that are not in the helpers' answers.
+- Do not redo or check the helpers' work.
+- You may only: put the answers in a sensible order, join them into one clean answer, fix numbering and formatting, and remove text that is repeated word for word.
+- If something the task asked for is missing from the helpers' answers, leave it out. Do not fill it in yourself.
+
 Reply with only the final answer."""
 
 
@@ -68,4 +75,5 @@ def combine_user(task: str, parts: list[str], answers: list[str]) -> str:
     pieces = "\n\n".join(
         f"--- Helper {i + 1} was asked: {p}\nAnswer:\n{a}" for i, (p, a) in enumerate(zip(parts, answers))
     )
-    return f"Task: {task}\n\n{pieces}\n\nNow write the final answer to the task."
+    return (f"Task: {task}\n\n{pieces}\n\n"
+            "Now combine the helpers' answers into the final answer. Use only what they wrote; add nothing.")
