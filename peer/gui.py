@@ -162,10 +162,10 @@ class IdleApp:
 
         shared = ttk.LabelFrame(self.root, text="Settings (used by both modes)", padding=8)
         shared.pack(fill="x", padx=10, pady=8)
-        ttk.Label(shared, text="Network name:").grid(row=0, column=0, sticky="w")
+        ttk.Label(shared, text="Grid name:").grid(row=0, column=0, sticky="w")
         ttk.Entry(shared, textvariable=self.v["room"], width=32).grid(row=0, column=1, sticky="we", padx=4)
-        ttk.Button(shared, text="New network", command=self.new_room).grid(row=0, column=2)
-        ttk.Label(shared, text="Everyone on the same network name can use each other's devices ('general' by default).",
+        ttk.Button(shared, text="New grid", command=self.new_room).grid(row=0, column=2)
+        ttk.Label(shared, text="Every device on the same grid name can share its AI ('general' by default).",
                   foreground="gray").grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
         ttk.Label(shared, text="Location:").grid(row=2, column=0, sticky="w", pady=(8, 0))
         self.location_names = {f"{code} - {info['name']} ({info['g_co2_per_kwh']} g CO2/kWh)": code
@@ -176,7 +176,7 @@ class IdleApp:
         self.location_box.set(current)
         self.location_box.bind("<<ComboboxSelected>>",
                                lambda e: self.v["location"].set(self.location_names[self.location_box.get()]))
-        ttk.Label(shared, text="sample data for now · parts go to the cleanest grids first",
+        ttk.Label(shared, text="sample data for now · prompts go to the lowest-carbon electricity first",
                   foreground="gray").grid(row=2, column=2, sticky="w", pady=(8, 0))
         shared.columnconfigure(1, weight=1)
 
@@ -419,7 +419,7 @@ class IdleApp:
 
     def new_room(self) -> None:
         if self.get("room") and not messagebox.askyesno(
-                "New network", "Make a new private network name? Teammates will need to type it too."):
+                "New grid", "Make a new private grid name? Teammates will need to type it too."):
             return
         self.v["room"].set(new_room_name())
 

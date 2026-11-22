@@ -1,4 +1,4 @@
-"""Peer server: lets other devices on the same network chat with YOUR Ollama.
+"""Peer server: lets other devices on your grid chat with YOUR Ollama.
 
 Run it on the device that will lend its computer:
 
@@ -247,13 +247,13 @@ class PeerServer(ThreadingHTTPServer):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Share this device's Ollama with peers on the network.")
+    parser = argparse.ArgumentParser(description="Share this device's Ollama with devices on your grid.")
     parser.add_argument("--name", default=socket.gethostname(), help="friendly name shown to peers")
     parser.add_argument("--port", type=int, default=PEER_PORT)
     parser.add_argument("--fake", action="store_true", help=argparse.SUPPRESS)  # developer testing only
     parser.add_argument("--location", type=str.upper, choices=list(carbon.provinces()),
                         help="province/territory this device is in (fake for now), e.g. QC")
-    parser.add_argument("--room", help="network name to join (remembered; default: general)")
+    parser.add_argument("--room", help="grid name to join (remembered; default: general)")
     parser.add_argument("--models", nargs="*", default=[],
                         help=f"models to download (if needed) and share: {' '.join(MODEL_ALLOWLIST)}")
     args = parser.parse_args()
@@ -292,7 +292,7 @@ def main() -> None:
     if not start_responder(args.name, args.port):
         log("WARNING: discovery port busy, so peer.split can't auto-find this device (use --peers).")
     log(f"Peer '{args.name}' is up.")
-    log(f"Network: {room}")
+    log(f"Grid: {room}")
     start_announcer(room, args.name, args.port)
     address = local_ip() if args.port == PEER_PORT else f"{local_ip()}:{args.port}"
     log(f"Tell your teammate to run:  python -m peer.chat --peer {address}")

@@ -21,8 +21,8 @@ Both devices can run **both** pieces at the same time, so each can use the other
 
 ## The Idle app (recommended)
 
-A modern desktop window in the Idle colours for everything below: chatting, hosting, network
-names, locations, finding/checking devices, attachments, chat history, credits and CO2.
+A modern desktop window in the Idle colours for everything below: chatting, hosting, grid
+names, your CO2 use, finding/checking devices, attachments, chat history, credits and CO2.
 
 ```bash
 python3 -m pip install nicegui pywebview
@@ -36,12 +36,14 @@ your browser instead; `--browser` does that on purpose.) Closing the window also
 It runs exactly the same commands as the simple window, so everything in this README applies.
 
 - **Ask**: a chat. Pick the helpers' model, type a message (Ctrl+Enter sends), and add files
-  with the 📎 button. Idle splits the prompt across the devices on your network automatically
+  with the 📎 button. Idle splits the prompt across the devices on your grid automatically
   (cleanest grids first) and replies with the final answer. *Details* under each reply shows
   which devices and models did the work, and the full log.
 - **Host**: your name, the models to download and share, **Start hosting**, and the server log.
-- **Network**: your network name (`general` by default), your location, the grid-intensity
-  chart, extra IPs, *Find devices*, and *Check a device* (explains why one can't be reached).
+- **Grid**: your grid name (`general` by default), extra IPs, *Find devices*, and *Check a device* (explains why one can't be reached).
+- **Your CO2 use**: where this device is (its electricity's g CO2/kWh), how much CO2 it emits
+  per hour while running a model, how that compares with the cleanest and dirtiest provinces, and
+  this session's totals (this device's AI work, and your prompts across every device).
 - **Chat history**: every past prompt and its answer.
 - The header shows your **credits** (this session), whether you're hosting, and whether Ollama runs.
 
@@ -53,7 +55,7 @@ python3 -m peer.gui
 
 - **Top toggle:** *Ask* (send prompts) or *Host* (share my model). Hosting keeps running
   while you switch to Ask, so one device can do both.
-- **Network name:** `general` by default; type another (or press *New network*) for a private one. It's remembered.
+- **Grid name:** `general` by default; type another (or press *New grid*) for a private one. It's remembered.
 - **Host:** enter your name, press *Start hosting*.
 - **Ask:** type a prompt at the bottom and press **Send** (or Ctrl+Enter). It's split across the
   devices automatically.
@@ -129,7 +131,7 @@ The server normally uses port 8765. If that port is taken when it starts:
   server takes 8765 back. Only processes whose command line contains `peer.server` are closed.
 - another program has it: the new server uses the next free port.
 
-Teammates on your network find the new port automatically; the server window also prints the address
+Teammates on your grid find the new port automatically; the server window also prints the address
 to type (e.g. `10.0.0.5:8770`).
 
 ## Credits
@@ -216,7 +218,7 @@ python3 -m peer.split "Write a beginner's guide to composting"
 
 What happens (the prompts for each step are in `peer/prompts.py`):
 
-1. **Find** the other devices (network name, remembered devices, or the Wi-Fi).
+1. **Find** the other devices (grid name, remembered devices, or the Wi-Fi).
 2. **Plan**: first *your* device's coordinator model (`llama3.2:3b`) counts how many independent
    pieces the task has (without being told how many devices exist); code uses that many devices at
    most. Then it writes exactly that many complete instructions, one per helper device, each producing a
@@ -253,23 +255,23 @@ Options:
 
 The device running `peer.split` needs Ollama + the model too, because it does the planning.
 
-## 5. Network names: find each other without typing IPs (university Wi-Fi)
+## 5. Grids: find each other without typing IPs (university Wi-Fi)
 
 University Wi-Fi blocks the automatic search. Instead, every device posts its address under a shared
-**network name** on [ntfy.sh](https://ntfy.sh) (a free public message board, no account), and
+**grid name** on [ntfy.sh](https://ntfy.sh) (a free public message board, no account), and
 `peer.split` reads it.
 
-- Everyone starts on the network **`general`**, so devices find each other with no setup.
-- For a private network just for your team, make a name and share it **privately**
+- Everyone starts on the grid **`general`**, so devices find each other with no setup.
+- For a private grid just for your team, make a name and share it **privately**
   (anyone who knows the name can use your devices):
   ```bash
   python3 -m peer.room
   ```
-  Then use it everywhere: in the apps (*Network name*), or `--room <name>` in the terminal
+  Then use it everywhere: in the apps (*Grid name*), or `--room <name>` in the terminal
   (`peer.server` and `peer.split`). It's remembered in `room.txt`.
 
 Servers re-post their address automatically if it changes. Give each device a different name.
-Only private network addresses (like `10.x`) are used, so someone who learns the network name
+Only private network addresses (like `10.x`) are used, so someone who learns the grid name
 can't redirect your prompts to a server on the internet.
 
 ## Testing on one device
@@ -286,8 +288,8 @@ Run the server in one terminal and `python3 -m peer.chat --peer localhost` in an
 | `Models shared: (none ...)` | Ollama isn't running on the server device, or the model isn't downloaded yet. Run `ollama pull llama3.2:3b` there. |
 | `model '...' is not allowed` | Only models in `peer/config.py` → `MODEL_ALLOWLIST` can run. |
 | `peer.split` only finds "this device" | Auto-find only checks addresses that share your first three numbers (e.g. `10.0.3.x`). Big networks put devices on different ones. Run once with `--peers <their IP>` and it's remembered. |
-| `Couldn't read/post to the network` | The device can't reach ntfy.sh (no internet, or the Wi-Fi login page isn't done). Open a browser to check. Remembered devices and `--peers` still work. |
-| The network lists a device but it's skipped | Its server stopped, or its address changed and it hasn't re-posted yet (it checks every 30 s). |
+| `Couldn't read/post to the grid` | The device can't reach ntfy.sh (no internet, or the Wi-Fi login page isn't done). Open a browser to check. Remembered devices and `--peers` still work. |
+| The grid lists a device but it's skipped | Its server stopped, or its address changed and it hasn't re-posted yet (it checks every 30 s). |
 | Wrong IP printed | Find it yourself. Mac: `ipconfig getifaddr en0`. Windows: `ipconfig`, then look for "IPv4 Address". |
 
 ## Safety
@@ -317,7 +319,7 @@ Run the server in one terminal and `python3 -m peer.chat --peer localhost` in an
 | `peer/carbon.py` + `peer/provinces.json` | Grid CO2 per kWh by province, used to send parts to the cleanest devices |
 | `peer/check.py` | `python -m peer.check IP`: explains why a device can't be reached |
 | `peer/credits.py` | How many credits a piece of work costs/earns (tokens, or compute time) |
-| `peer/room.py` | Network names: posts/reads device addresses on ntfy.sh so peers find each other |
+| `peer/room.py` | Grid names: posts/reads device addresses on ntfy.sh so peers find each other |
 | `peer/discovery.py` | Finds other devices on the Wi-Fi (UDP broadcast on port 8766) |
 | `peer/ollama.py` | Talks to the Ollama on this device |
 

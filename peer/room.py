@@ -19,11 +19,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from peer.config import DEFAULT_NETWORK, ROOM_ANNOUNCE_EVERY, ROOM_FILE, ROOM_SERVICE_URL
+from peer.config import DEFAULT_GRID, ROOM_ANNOUNCE_EVERY, ROOM_FILE, ROOM_SERVICE_URL
 from peer.discovery import local_ip
 
 ROOM_PATTERN = re.compile(r"^[a-z0-9_-]{3,64}$")
-TOPIC_PREFIX = "idle-net-"  # ntfy topic = prefix + network name, so "general" doesn't clash with other apps
+TOPIC_PREFIX = "idle-net-"  # ntfy topic = prefix + grid name, so "general" doesn't clash with other apps
 
 
 def topic(room: str) -> str:
@@ -63,18 +63,18 @@ def new_room_name() -> str:
 
 
 def resolve_room(cli_value: str | None) -> str:
-    """Network name from --room (and remember it), else the saved one, else "general"."""
+    """Grid name from --room (and remember it), else the saved one, else "general"."""
     if cli_value:
         cli_value = normalize_room(cli_value)
         if not ROOM_PATTERN.match(cli_value):
-            raise SystemExit("Network names must be 3-64 letters, numbers or dashes (try: python -m peer.room)")
+            raise SystemExit("Grid names must be 3-64 letters, numbers or dashes (try: python -m peer.room)")
         Path(ROOM_FILE).write_text(cli_value + "\n")
         return cli_value
     try:
         saved = normalize_room(Path(ROOM_FILE).read_text())
     except OSError:
         saved = ""
-    return saved if ROOM_PATTERN.match(saved) else DEFAULT_NETWORK
+    return saved if ROOM_PATTERN.match(saved) else DEFAULT_GRID
 
 
 # ---------------------------------------------------------------- posting
@@ -95,10 +95,10 @@ def start_announcer(room: str, name: str, port: int) -> None:
             if ip != "127.0.0.1" and (ip != last_ip or time.time() - last_post > ROOM_ANNOUNCE_EVERY):
                 try:
                     announce(room, name, ip, port)
-                    log(f"Posted to network '{room}': {name} is at {ip}:{port}")
+                    log(f"Posted to grid '{room}': {name} is at {ip}:{port}")
                     last_ip, last_post = ip, time.time()
                 except (urllib.error.URLError, OSError) as e:
-                    log(f"Couldn't post to the network (will retry): {e}")
+                    log(f"Couldn't post to the grid (will retry): {e}")
             time.sleep(30)
 
     threading.Thread(target=loop, daemon=True).start()
@@ -123,7 +123,7 @@ def lookup(room: str) -> list[dict]:
         with urllib.request.urlopen(url, timeout=10) as resp:
             lines = resp.read().decode().splitlines()
     except (urllib.error.URLError, OSError) as e:
-        log(f"Couldn't read network '{room}': {e}")
+        log(f"Couldn't read grid '{room}': {e}")
         return []
 
     latest: dict[str, dict] = {}
@@ -144,7 +144,7 @@ def lookup(room: str) -> list[dict]:
 def main() -> None:
     room = new_room_name()
     Path(ROOM_FILE).write_text(room + "\n")
-    print(f"New network name: {room}")
+    print(f"New grid name: {room}")
     print(f"Saved to {ROOM_FILE}. Send this name privately to your teammates (not in the public repo!).")
     print(f"They run:  python -m peer.server --name THEIR_NAME --room {room}")
 

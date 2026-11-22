@@ -158,7 +158,8 @@ def index() -> None:
         with ui.tabs().classes("ml-6") as tabs:
             t_ask = ui.tab("Ask", icon="chat_bubble_outline")
             t_host = ui.tab("Host", icon="dns")
-            t_net = ui.tab("Network", icon="hub")
+            t_net = ui.tab("Grid", icon="hub")
+            t_co2 = ui.tab("Your CO2 use", icon="eco")
             t_hist = ui.tab("Chat history", icon="history")
         ui.space()
         ollama_badge = ui.label().classes("idle-pill text-xs")
@@ -180,7 +181,7 @@ def index() -> None:
                           ).classes("w-80").props("outlined dense")
                 model_about = ui.label().classes("text-sm opacity-70")
                 ui.space()
-                ui.label(f"Split across devices on the cleanest grids · planned by {COORDINATOR_MODEL}"
+                ui.label(f"Split across your grid, lowest-carbon electricity first · planned by {COORDINATOR_MODEL}"
                          ).classes("text-xs opacity-50")
 
             chat_scroll = ui.scroll_area().classes("w-full h-[56vh] idle-soft")
@@ -234,42 +235,22 @@ def index() -> None:
                 host_earned = ui.label().classes("text-sm")
             host_feed = LogFeed(bridge.host, "h-96")
 
-        # ================================================================ NETWORK
+        # ================================================================ GRID
         with ui.tab_panel(t_net).classes("gap-4"):
+            with ui.card().classes("idle-card w-full"):
+                ui.label("Grid name").classes("idle-caption")
+                with ui.row().classes("w-full items-center no-wrap"):
+                    room_input = ui.input(value=s["room"], placeholder="general",
+                                          on_change=lambda e: save("room", e.value.strip() or "general")
+                                          ).classes("grow").props("outlined dense")
+                    ui.button("New private grid", on_click=lambda: room_input.set_value(new_room_name())
+                              ).props("outline no-caps")
+                ui.label("Every device on the same grid name can share its AI. 'general' is open to all; "
+                         "make a private grid for just your team.").classes("text-xs opacity-60")
             with ui.row().classes("w-full gap-4 items-stretch no-wrap"):
                 with ui.card().classes("idle-card w-1/2"):
-                    ui.label("Network name").classes("idle-caption")
-                    with ui.row().classes("w-full items-center no-wrap"):
-                        room_input = ui.input(value=s["room"], placeholder="general",
-                                              on_change=lambda e: save("room", e.value.strip() or "general")
-                                              ).classes("grow").props("outlined dense")
-                        ui.button("New private network", on_click=lambda: room_input.set_value(new_room_name())
-                                  ).props("outline no-caps")
-                    ui.label("Everyone on the same network name can use each other's devices. 'general' is "
-                             "open to all; make a private name for just your team.").classes("text-xs opacity-60")
-                with ui.card().classes("idle-card w-1/2"):
-                    ui.label("Location").classes("idle-caption")
-                    locations = {"": "Not set (used last)"} | {
-                        code: f"{code} - {info['name']} ({info['g_co2_per_kwh']} g CO2/kWh)"
-                        for code, info in carbon.provinces().items()}
-                    ui.select(locations, value=s["location"] or "",
-                              on_change=lambda e: save("location", e.value or "")).classes("w-full").props("outlined dense")
-                    ui.label("Sample data for now · parts go to the cleanest grids first").classes("text-xs opacity-60")
-            with ui.card().classes("idle-soft w-full"):
-                ui.label("Grid carbon intensity (g CO2/kWh)").classes("idle-caption")
-                worst = max(i["g_co2_per_kwh"] for i in carbon.provinces().values())
-                with ui.column().classes("w-full gap-1"):
-                    for code, info in carbon.provinces().items():
-                        g = info["g_co2_per_kwh"]
-                        with ui.row().classes("w-full items-center no-wrap gap-2"):
-                            ui.label(code).classes("w-8 font-semibold text-sm")
-                            ui.linear_progress(value=max(g / worst, 0.01), show_value=False, size="10px",
-                                               color=grid_colour(g)).classes("grow")
-                            ui.label(f"{g}").classes("w-10 text-right text-sm")
-            with ui.row().classes("w-full gap-4 items-stretch no-wrap"):
-                with ui.card().classes("idle-card w-1/2"):
-                    ui.label("Devices on your network").classes("idle-caption")
-                    ui.input("Extra IPs (if a device isn't on the network)", value=s["extra_peers"],
+                    ui.label("Devices on your grid").classes("idle-caption")
+                    ui.input("Extra IPs (if a device isn't on the grid)", value=s["extra_peers"],
                              on_change=lambda e: save("extra_peers", e.value)).classes("w-full").props("outlined dense")
                     ui.switch("Also search the Wi-Fi", value=s["search_wifi"], on_change=lambda e: save("search_wifi", e.value))
                     ui.button("Find devices", icon="search", on_click=lambda: find_devices()).props("unelevated no-caps color=dark")
@@ -281,6 +262,35 @@ def index() -> None:
                         ui.button("Check", on_click=lambda: check_device()).props("outline no-caps")
                     check_output = ui.code("", language="text").classes("w-full text-xs")
                     status_line = ui.label().classes("text-sm opacity-70")
+
+        # ================================================================ YOUR CO2 USE
+        with ui.tab_panel(t_co2).classes("gap-4"):
+            with ui.row().classes("w-full gap-4 items-stretch no-wrap"):
+                with ui.card().classes("idle-card w-1/2 gap-2"):
+                    ui.label("Your device").classes("idle-caption")
+                    locations = {"": "Not set"} | {
+                        code: f"{code} - {info['name']} ({info['g_co2_per_kwh']} g CO2/kWh)"
+                        for code, info in carbon.provinces().items()}
+                    ui.select(locations, value=s["location"] or "", label="Where this device is",
+                              on_change=lambda e: save("location", e.value or "")).classes("w-full").props("outlined dense")
+                    co2_rate = ui.label().classes(f"idle-title text-4xl text-[{NAVY}] mt-2")
+                    co2_rate_note = ui.label().classes("text-sm opacity-70")
+                    co2_status = ui.label().classes("idle-pill text-xs self-start")
+                    ui.label("Estimate: a typical device uses about 30 W while running a model. Location data "
+                             "is sample data for now.").classes("text-xs opacity-50")
+                with ui.card().classes("idle-card w-1/2 gap-3"):
+                    ui.label("Compared with other provinces (g CO2 per hour)").classes("idle-caption")
+                    compare_box = ui.column().classes("w-full gap-2")
+                    ui.label("Helpers on the lowest-carbon electricity get your prompts first.").classes("text-xs opacity-60")
+            with ui.card().classes("idle-soft w-full"):
+                ui.label("This session").classes("idle-caption")
+                with ui.row().classes("w-full gap-10"):
+                    with ui.column().classes("gap-0"):
+                        co2_device = ui.label().classes("idle-title text-2xl")
+                        co2_device_note = ui.label().classes("text-xs opacity-60")
+                    with ui.column().classes("gap-0"):
+                        co2_prompts = ui.label().classes("idle-title text-2xl")
+                        co2_prompts_note = ui.label().classes("text-xs opacity-60")
 
         # ================================================================ CHAT HISTORY
         with ui.tab_panel(t_hist).classes("gap-4"):
@@ -306,7 +316,7 @@ def index() -> None:
                 with ui.column().classes("w-full items-center py-16 gap-2 opacity-70"):
                     ui.image("/assets/icon.png").classes("w-20 h-20")
                     ui.label("Ask anything.").classes("idle-title text-xl")
-                    ui.label("Your prompt is split across the devices on your network, cleanest power grids "
+                    ui.label("Your prompt is split across the devices on your grid, lowest-carbon electricity "
                              "first, and Idle replies here.").classes("text-sm text-center max-w-md")
             for turn in conversation:
                 chat_bubbles(turn["prompt"], turn["attached"], turn["answer"])
@@ -330,7 +340,7 @@ def index() -> None:
         steps = models_used(output)
         parts = [st for st in steps if st["step"].startswith("part")]
         if any(st["step"] == "combine" for st in steps):
-            return "Putting the answers together…"
+            return "Merging responses…"
         if parts:
             done = sum(st["done"] for st in parts)
             where = ", ".join(sorted({st["device"] for st in parts}))
@@ -339,7 +349,7 @@ def index() -> None:
             return "Downloading the model (one time)…"
         if any(st["step"] == "plan" for st in steps) or "PLAN:" in output:
             return "Planning how to split it…"
-        return "Finding devices on your network…"
+        return "Finding devices on your grid…"
 
     def finish_turn(turn: dict) -> None:
         output = bridge.ask.output
@@ -418,7 +428,7 @@ def index() -> None:
                   type="positive" if result["pdf_supported"] else "negative")
         refresh_attachments()
 
-    # ---------------------------------------------------------------- host / network
+    # ---------------------------------------------------------------- host / grid
     def toggle_host() -> None:
         if bridge.host.running:
             bridge.host.stop()
@@ -438,7 +448,7 @@ def index() -> None:
         peers_box.clear()
         with peers_box:
             if not peers:
-                ui.label("No other devices found. Check the network name, or add their IP above.").classes("text-sm opacity-60")
+                ui.label("No other devices found. Check the grid name, or add their IP above.").classes("text-sm opacity-60")
             for p in peers:
                 g = carbon.intensity(p.get("location")) if p.get("location") else None
                 with ui.row().classes("w-full items-center no-wrap gap-2 idle-soft px-3 py-1"):
@@ -483,6 +493,40 @@ def index() -> None:
                         ui.label(title).classes("text-sm text-left")
                         ui.label(f.stem).classes("text-xs opacity-50")
 
+    # ---------------------------------------------------------------- your CO2 use
+    drawn: dict = {}
+
+    def update_co2(c: dict) -> None:
+        if c["g_per_kwh"] is None:
+            co2_rate.set_text("Set your location")
+            co2_rate_note.set_text("Pick where this device is to see its CO2.")
+        else:
+            co2_rate.set_text(f"{c['g_per_hour']:.2f} g CO2 / hour")
+            co2_rate_note.set_text(f"while running a model · {c['location']} electricity: {c['g_per_kwh']:g} g CO2/kWh")
+        co2_status.set_text("● Working now" if c["working_now"] else "○ Idle (almost no extra CO2)")
+        key = (c["g_per_hour"], c["location"])
+        if drawn.get("compare") != key:  # only redraw when it changes
+            drawn["compare"] = key
+            compare_box.clear()
+            rows = [(f"{c['cleanest']['code']} (cleanest)", c["cleanest"]["g_per_hour"]),
+                    (f"You ({c['location']})" if c["location"] else "You (not set)", c["g_per_hour"]),
+                    (f"{c['dirtiest']['code']} (dirtiest)", c["dirtiest"]["g_per_hour"])]
+            top = c["dirtiest"]["g_per_hour"] or 1
+            with compare_box:
+                for name, value in rows:
+                    with ui.row().classes("w-full items-center no-wrap gap-2"):
+                        ui.label(name).classes("w-32 text-sm font-semibold")
+                        ui.linear_progress(value=max((value or 0) / top, 0.01), show_value=False, size="12px",
+                                           color=grid_colour(None if value is None else value / c["watts"] * 1000)
+                                           ).classes("grow")
+                        ui.label("—" if value is None else f"{value:.2f}").classes("w-12 text-right text-sm")
+        minutes = (c["hosting_seconds"] + c["own_seconds"]) / 60
+        co2_device.set_text("—" if c["this_device_grams"] is None else f"~{c['this_device_grams']:.3f} g CO2")
+        co2_device_note.set_text(f"this device: {minutes:.1f} min of AI work "
+                                 f"({c['hosting_seconds'] / 60:.1f} hosting for others, {c['own_seconds'] / 60:.1f} for your prompts)")
+        co2_prompts.set_text(f"~{c['prompts_grams']:.3f} g CO2")
+        co2_prompts_note.set_text(f"your {c['prompts']} prompt(s), on every device that helped")
+
     # ---------------------------------------------------------------- every second
     def tick() -> None:
         state = bridge.state()
@@ -512,6 +556,7 @@ def index() -> None:
         host_button.props(f"color={'negative' if host_running else 'dark'} icon={'stop' if host_running else 'play_arrow'}")
         host_earned.set_text(f"earned this session: {c['earned']:.2f} credits")
         host_feed.update()
+        update_co2(state["co2"])
         status_line.set_text(("Ollama is running" if state["ollama_running"] else "Ollama isn't running on this device")
                              + " · PDF support " + ("installed" if state["pdf_supported"] else "not installed"))
 

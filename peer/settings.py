@@ -4,14 +4,14 @@ import socket
 from pathlib import Path
 
 from peer import carbon
-from peer.config import DEFAULT_MODEL, DEFAULT_NETWORK, MODELS, ROOM_FILE
+from peer.config import DEFAULT_MODEL, DEFAULT_GRID, MODELS, ROOM_FILE
 
 SETTINGS_FILE = "gui_settings.json"
 PROJECT_DIR = Path(__file__).resolve().parent.parent  # the folder that contains peer/
 
 DEFAULTS = {
     "mode": "ask",              # "ask" or "host"
-    "room": DEFAULT_NETWORK,    # network name (shown as "Network name")
+    "room": DEFAULT_GRID,    # grid name (shown as "Grid name")
     "model": DEFAULT_MODEL,
     "host_name": socket.gethostname(),
     "search_wifi": True,
@@ -33,11 +33,11 @@ def load_settings() -> dict:
     if settings["model"] not in MODELS:  # e.g. a model that was removed from the list
         settings["model"] = DEFAULT_MODEL
     settings["host_models"] = [m for m in settings.get("host_models") or [] if m in MODELS]
-    if not settings["room"] or settings["room"] == DEFAULT_NETWORK:  # the one the terminal tools saved
+    if not settings["room"] or settings["room"] == DEFAULT_GRID:  # the one the terminal tools saved
         try:
-            settings["room"] = Path(ROOM_FILE).read_text().strip() or DEFAULT_NETWORK
+            settings["room"] = Path(ROOM_FILE).read_text().strip() or DEFAULT_GRID
         except OSError:
-            settings["room"] = DEFAULT_NETWORK
+            settings["room"] = DEFAULT_GRID
     return settings
 
 

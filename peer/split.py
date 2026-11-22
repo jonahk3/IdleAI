@@ -1,4 +1,4 @@
-"""Split one big prompt across every device on the network, then put it back together.
+"""Split one big prompt across every device on your grid, then put it back together.
 
     python -m peer.split "Give me the first 30 prime numbers"
 
@@ -121,7 +121,7 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
     me = {local_ip(), "127.0.0.1"}
     if room:
         listed = [d for d in lookup(room) if d["ip"] not in me]
-        log(f"Network '{room}': {len(listed)} other device(s) listed")
+        log(f"Grid '{room}': {len(listed)} other device(s) listed")
         candidates += [(d["ip"], d["port"]) for d in listed]
     if use_discovery and not candidates:
         log("Looking for other devices on the Wi-Fi...")
@@ -311,7 +311,7 @@ def save(task: str, final: str, attached: list[str]) -> Path:
 
 # ---------------------------------------------------------------- main
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Split a prompt across devices on the network.")
+    parser = argparse.ArgumentParser(description="Split a prompt across devices on your grid.")
     parser.add_argument("prompt", nargs="?", help="what to ask (you'll be asked if you leave it out)")
     parser.add_argument("--model", default=DEFAULT_MODEL, choices=list(MODELS),
                         help="the model the helpers run for each part")
@@ -324,7 +324,7 @@ def main() -> None:
     parser.add_argument("--no-discover", action="store_true", help="only use --peers, don't search the Wi-Fi")
     parser.add_argument("--fake", action="store_true", help=argparse.SUPPRESS)  # developer testing only
     parser.add_argument("--forget", action="store_true", help="forget saved devices (known_peers.json)")
-    parser.add_argument("--room", help="network name to find devices in (remembered; default: general)")
+    parser.add_argument("--room", help="grid name to find devices in (remembered; default: general)")
     parser.add_argument("--list", action="store_true", help="just list the devices that can be used, then exit")
     args = parser.parse_args()
     room = resolve_room(args.room)

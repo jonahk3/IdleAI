@@ -30,7 +30,7 @@ from pathlib import Path
 
 from peer import attachments, carbon, ollama
 from peer.config import (API_ALLOWED_ORIGINS, API_PORT, COORDINATOR_MODEL, MODELS, RESULTS_DIR,
-                         STARTING_CREDITS, UI_URL)
+                         LAPTOP_WATTS, STARTING_CREDITS, UI_URL)
 from peer.room import new_room_name
 from peer.settings import PROJECT_DIR, load_settings, save_settings
 
@@ -164,6 +164,10 @@ class Bridge:
         self.ask = Job("ask")
         self.earned = 0.0   # credits for this session only (reset every time the bridge starts)
         self.spent = 0.0
+        # CO2 for this session: seconds THIS device spent running models, and the estimate for
+        # your prompts across all devices (from the [carbon] lines)
+        self.work = {"hosting_seconds": 0.0, "own_seconds": 0.0, "prompts_grams": 0.0, "prompts": 0,
+                     "serving": False}
         self.peers: list[dict] = []
         self.files: dict[str, dict] = {}   # id -> {"id", "name", "path", "summary", "error"}
         self.host.on_line = self.ask.on_line = self.count_credits
@@ -179,11 +183,41 @@ class Bridge:
             time.sleep(5)
 
     def count_credits(self, line: str) -> None:
+        """Read credits and CO2 facts from each line the commands print."""
         if m := re.search(r"\[credits\] (earned|spent) ([\d.]+) credits", line):
             if m.group(1) == "earned":
                 self.earned += float(m.group(2))
             else:
                 self.spent += float(m.group(2))
+        if "asked for [model]" in line:                                   # hosting: a request came in
+            self.work["serving"] = True
+        if m := re.search(r"<- reply done \(\d+ chars, ([\d.]+)s\)", line):  # hosting: answered it
+            self.work["hosting_seconds"] += float(m.group(1))
+            self.work["serving"] = False
+        if "disconnected mid-reply" in line or "error talking to Ollama" in line:
+            self.work["serving"] = False
+        if m := (re.search(r"part \d+ done by this device in ([\d.]+)s", line)
+                 or re.search(r"planned \d+ part\(s\) in ([\d.]+)s", line)
+                 or re.search(r"combined in ([\d.]+)s", line)):           # your prompt, on this device
+            self.work["own_seconds"] += float(m.group(1))
+        if m := re.search(r"\[carbon\] about ([\d.]+) g CO2 for the parts", line):
+            self.work["prompts_grams"] += float(m.group(1))
+            self.work["prompts"] += 1
+
+    def co2_state(self, location: str | None) -> dict:
+        g_kwh = carbon.intensity(location) if location else None
+        seconds = self.work["hosting_seconds"] + self.work["own_seconds"]
+        cleanest, dirtiest = next(iter(carbon.provinces().items())), list(carbon.provinces().items())[-1]
+        return {
+            "location": location, "g_per_kwh": g_kwh, "watts": LAPTOP_WATTS,
+            "g_per_hour": None if g_kwh is None else LAPTOP_WATTS / 1000 * g_kwh,
+            "working_now": self.work["serving"] or self.ask.running,
+            "hosting_seconds": self.work["hosting_seconds"], "own_seconds": self.work["own_seconds"],
+            "this_device_grams": carbon.estimate_grams(location, seconds) if location else None,
+            "prompts_grams": self.work["prompts_grams"], "prompts": self.work["prompts"],
+            "cleanest": {"code": cleanest[0], "g_per_hour": LAPTOP_WATTS / 1000 * cleanest[1]["g_co2_per_kwh"]},
+            "dirtiest": {"code": dirtiest[0], "g_per_hour": LAPTOP_WATTS / 1000 * dirtiest[1]["g_co2_per_kwh"]},
+        }
 
     # ----- commands (the same ones the desktop GUI builds) -----
     @staticmethod
@@ -230,6 +264,7 @@ class Bridge:
             "locations": [{"code": c, **info} for c, info in carbon.provinces().items()],
             "credits": {"start": STARTING_CREDITS, "earned": round(self.earned, 2), "spent": round(self.spent, 2),
                         "balance": round(STARTING_CREDITS + self.earned - self.spent, 2)},
+            "co2": self.co2_state(s.get("location")),
             "hosting": {"running": self.host.running, "command": self.host.command},
             "asking": {"running": self.ask.running, "command": self.ask.command},
             "peers": self.peers,

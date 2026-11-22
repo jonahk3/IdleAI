@@ -51,8 +51,8 @@ KNOWN_PEERS_FILE = "known_peers.json"
 # "Room" meeting point: devices post their address here so peers can find them
 # on networks that block discovery (e.g. university Wi-Fi). Free, no account.
 ROOM_SERVICE_URL = os.environ.get("IDLE_ROOM_SERVICE", "https://ntfy.sh")
-ROOM_FILE = "room.txt"          # your network name is remembered here (never commit it)
-DEFAULT_NETWORK = "general"     # the network everyone joins unless they pick another name
+ROOM_FILE = "room.txt"          # your grid name is remembered here (never commit it)
+DEFAULT_GRID = "general"     # the grid everyone joins unless they pick another name
 ROOM_ANNOUNCE_EVERY = 60 * 60   # re-post our address at least this often (seconds)
 
 # The most tokens the planner may write. A plan is a few short instructions; this stops
