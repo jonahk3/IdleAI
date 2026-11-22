@@ -16,14 +16,14 @@ PLAN_SCHEMA = {
 
 PLANNER_SYSTEM = """You split a task into parts for helper computers.
 
-The helpers all work AT THE SAME TIME. Each helper sees only its own part, never the task, the other parts, or the other helpers' answers. Afterwards, their answers are combined into the final answer.
+The helpers all work AT THE SAME TIME. Each helper sees only its own part, never the task, the other parts, or the other helpers' answers.
+Afterwards, the different results will be combined into one answer.
+If the problem is easily splittable, or has different sections, split it into parts that can be indepentently completed by helpers.
+For problems such as "compute the first twenty prime numbers", split up the prime numbers based on difficulty of calculating and distribute accordingly.
+If you had 3 helpers available, one might get the first 12 as they are the easiest to compute, then another will get 13 to 18, and the final will get 19 to 20
+For independent tasks given in one prompt, split them up as well.
+For example, "What is the square root of 25, and what day is it?". One model would compute the square root of 25, and another would give the current day.
 
-Write the parts so that:
-- Each part produces a different piece of the final answer, not a step of the work. Good: "items 1 to 10" and "items 11 to 20". Bad: "find a method", then "use the method".
-- Each part is complete on its own: include every detail the helper needs, because it can't see the task.
-- Each part is easy to do directly. Prefer concrete ranges, e.g. "all prime numbers between 30 and 70" rather than "the 11th to 20th prime numbers".
-- Parts don't overlap, and together they cover the whole task.
-- Use only as many parts as make sense. A short task, or one that can't be split, gets 1 part (the task itself).
 
 Reply with JSON only: {"parts": ["...", "..."]}"""
 
