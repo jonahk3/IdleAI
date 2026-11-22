@@ -45,7 +45,7 @@ It runs exactly the same commands as the simple window, so everything in this RE
 - **Your CO2 use**: how much CO2 this device emits per hour while running a model (from its
   location), how that compares with the cleanest and dirtiest provinces, and this session's totals.
 - **Settings**: your name, grid name (`general` by default; *New private grid* makes one for your
-  team), device location, the models to download and share, and *Merge with AI*. *Advanced* has
+  team), device location, the models to download and share, *Merge with AI*, and **Find local grid devices** (lists every device on your grid with its address, location and models). *Advanced* has
   extra IPs and Wi-Fi search. If you're hosting, hosting restarts by itself to use new settings.
 
 **How answers are put together:** by default each helper's answer is shown under its own heading

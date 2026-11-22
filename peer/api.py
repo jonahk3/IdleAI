@@ -288,7 +288,7 @@ class Bridge:
     # ----- actions -----
     def find_peers(self, s: dict) -> dict:
         job = Job("find")
-        job.start(self.base("peer.split") + ["--list", "--model", s["model"]] + self.common(s) + self.peer_args(s))
+        job.start(self.base("peer.split") + ["--list"] + self.common(s) + self.peer_args(s))
         job.wait(60)
         m = re.search(r"PEERS_JSON (.*)", job.output)
         self.peers = [{**p, "label": f"{p['name']} ({carbon.label(p.get('location'))}) - {p['address']}"}

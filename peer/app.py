@@ -418,6 +418,13 @@ def index() -> None:
                           value=s["ai_merge"], on_change=lambda e: save("ai_merge", e.value))
                 ui.label("Off (recommended): each helper's answer is shown under its own heading, instantly and "
                          "exactly as written.").classes("text-xs opacity-60")
+                ui.label("Devices on your grid").classes("idle-caption mt-2")
+                with ui.row().classes("w-full items-center gap-3"):
+                    find_button = ui.button("Find local grid devices", icon="search", on_click=lambda: find_grid_devices()
+                                            ).props("unelevated no-caps color=primary")
+                    grid_status = ui.label("Press the button to see which devices are on your grid right now."
+                                           ).classes("text-xs opacity-60")
+                grid_devices = ui.column().classes("w-full gap-2")
                 with ui.expansion("Advanced", icon="tune").classes("w-full mt-2"):
                     ui.input("Extra IPs (devices that aren't found on the grid automatically)", value=s["extra_peers"],
                              on_change=lambda e: save("extra_peers", e.value)).classes("w-full").props("outlined dense")
@@ -592,6 +599,28 @@ def index() -> None:
         if name != setting("room"):
             changed("room", name)
             ui.notify(f"Now on grid '{name}'")
+
+    # ---------------------------------------------------------------- devices on the grid (Settings)
+    async def find_grid_devices() -> None:
+        find_button.props("loading")
+        grid_status.set_text(f"Looking on grid '{setting('room')}'…")
+        result = await run.io_bound(bridge.find_peers, load_settings())
+        find_button.props(remove="loading")
+        peers = result["peers"]
+        grid_status.set_text(f"{len(peers)} other device(s) on grid '{setting('room')}'"
+                             + (" (plus this one)" if peers else ". Make sure they're hosting on the same grid name."))
+        grid_devices.clear()
+        with grid_devices:
+            for peer in peers:
+                g = carbon.intensity(peer.get("location")) if peer.get("location") else None
+                with ui.row().classes("w-full items-center no-wrap gap-3 idle-soft px-3 py-2"):
+                    ui.icon("devices", color="primary").classes("text-xl")
+                    with ui.column().classes("gap-0 grow"):
+                        ui.label(peer["name"]).classes("font-semibold")
+                        ui.label(f"{peer['address']} · models: {', '.join(peer.get('models') or []) or 'none yet'}"
+                                 ).classes("text-xs opacity-60")
+                    ui.badge(carbon.place_name(peer.get("location")) + (f" · {g:g} g/kWh" if g is not None else ""),
+                             color=grid_colour(g)).classes("text-xs")
 
     # ---------------------------------------------------------------- history (right side)
     def list_history() -> None:

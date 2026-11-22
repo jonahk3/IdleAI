@@ -66,6 +66,7 @@ class LocalDevice(Device):
 
 class RemoteDevice(Device):
     """Another device running `python -m peer.server`."""
+    models: list[str] = []  # the models it shares (as it said when we found it)
 
     def __init__(self, name: str, ip: str, port: int, location: str | None = None) -> None:
         self.name, self.where, self.location = name, f"{ip}:{port}", location
@@ -107,8 +108,10 @@ def check_peer(host: str, port: int) -> dict | Exception:
         return e
 
 
-def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake: bool,
+def find_devices(model: str | None, manual_peers: list[str], use_discovery: bool, fake: bool,
                  room: str | None = None) -> list[Device]:
+    """This device + every reachable device. With a model, only devices that have it (the others are
+    asked to download it); with model=None, every device that answers (used to list the grid)."""
     devices: list[Device] = [LocalDevice(fake)]
     candidates: list[tuple[str, int]] = []
     for p in manual_peers:
@@ -137,7 +140,7 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
             log(f"  skip {host}:{port} (not reachable: {info})")
             log(f"    to find out why, run:  python -m peer.check {host}:{port}")
             continue
-        if model not in info["models"]:
+        if model is not None and model not in info["models"]:
             if model in info.get("downloading", {}):
                 pct = info["downloading"][model]
                 log(f"  skip '{info['name']}' (still downloading {model}" + (f", {pct}%)" if pct is not None else ")"))
@@ -145,7 +148,9 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
                 status = PeerClient(host, port).request_pull(model)
                 log(f"  skip '{info['name']}' (doesn't have {model} yet; asked it to download: {status})")
             continue
-        devices.append(RemoteDevice(info["name"], host, port, info.get("location")))
+        device = RemoteDevice(info["name"], host, port, info.get("location"))
+        device.models = list(info.get("models", []))
+        devices.append(device)
         working.append((host, port))
     if working:
         save_known_peers(working)
@@ -381,13 +386,15 @@ def main() -> None:
         Path(KNOWN_PEERS_FILE).unlink(missing_ok=True)
         log("Forgot saved devices.")
     if args.list:
-        devices = find_devices(args.model, args.peers, not args.no_discover, True, room)[1:]
-        log(f"{len(devices)} other device(s) ready:")
+        # Every device that answers on the grid (whatever models it has)
+        devices = find_devices(None, args.peers, not args.no_discover, True, room)[1:]
+        log(f"{len(devices)} other device(s) on the grid:")
         for d in devices:
-            log(f"  - {d.name} ({d.where}) [carbon] {carbon.label(d.location)}")
-        # One machine-readable line, used by the GUI to fill its peer list.
-        print("PEERS_JSON " + json.dumps([{"name": d.name, "address": d.where, "location": d.location}
-                                          for d in devices]), flush=True)
+            log(f"  - {d.name} ({d.where}) [carbon] {carbon.label(d.location)} · models: "
+                + (", ".join(d.models) or "none yet"))
+        # One machine-readable line, used by the apps to show the list.
+        print("PEERS_JSON " + json.dumps([{"name": d.name, "address": d.where, "location": d.location,
+                                           "models": d.models} for d in devices]), flush=True)
         return
     prompt = args.prompt or input("Prompt: ").strip()
     if not prompt:
