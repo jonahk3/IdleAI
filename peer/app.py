@@ -255,7 +255,8 @@ def index() -> None:
         with ui.column().classes("gap-0"):
             ui.label("Idle.").classes(f"idle-title text-2xl text-[{SAGE}] leading-none")
             ui.label("model computing software").classes("idle-caption leading-none")
-        with ui.tabs().classes("absolute left-1/2 -translate-x-1/2") as tabs:  # centred in the header
+        # centred, and sitting on the header's bottom line so the selection bar lines up with it
+        with ui.tabs().props("dense").classes("absolute left-1/2 -translate-x-1/2 bottom-0") as tabs:
             t_ask = ui.tab("Ask", icon="chat_bubble_outline")
             t_co2 = ui.tab("Your CO2 use", icon="eco")
             t_set = ui.tab("Settings", icon="settings")

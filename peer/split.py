@@ -337,8 +337,7 @@ def part_label(instruction: str, file_names: list[str]) -> str:
     named = [n for n in file_names if n.lower() in instruction.lower()]
     if named:
         return ", ".join(named)
-    text = instruction.strip().rstrip(".")
-    return text if len(text) <= 80 else text[:77] + "..."
+    return instruction.strip().rstrip(".")  # in full: cutting it off made headings unreadable
 
 
 def join_answers(parts: list[PartResult], att: Attachments) -> str:

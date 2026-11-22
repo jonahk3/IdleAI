@@ -23,10 +23,12 @@ COUNT_SYSTEM = """You look at a task and count how many INDEPENDENT pieces of wo
 - Separate files to process (e.g. "rate these two resumes"): 1 piece per file.
 - A long list of items (e.g. "the first 30 prime numbers", "translate these 40 sentences"): about 10 items per piece.
 - Only count real work. If the whole answer would be a few lines, it is 1 piece.
+- Never invent extra pieces (examples, related topics, deeper detail) that the task didn't ask for.
 
 Examples:
 "What is 17 times 23?" -> {"pieces": 1}
 "Write a haiku about rain" -> {"pieces": 1}
+"Explain the fundamental theorem of calculus in 2-3 sentences" -> {"pieces": 1}
 "What is the square root of 25, and what is the capital of France?" -> {"pieces": 2}
 "Rate Resume.pdf and Other.pdf out of 10" -> {"pieces": 2}
 "List the first 30 prime numbers" -> {"pieces": 3}
