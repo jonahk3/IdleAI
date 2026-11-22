@@ -32,10 +32,14 @@ Do not put terms like 'next', 'previous' or other linking terms. Each model need
 Reply with JSON only: {"parts": ["...", "..."]}"""
 
 
-def planner_user(task: str, helpers: int) -> str:
-    return (f"Task: {task}\n\n"
+def planner_user(task: str, helpers: int, attached: list[str] | None = None) -> str:
+    text = (f"Task: {task}\n\n"
             f"There are {helpers} helpers available. Use as many or as few of them as the task needs "
             f"(at most {helpers}): one part per independent piece, and just 1 part if the task can't be split.")
+    if attached:
+        text += ("\n\nEvery helper also receives these attachments: " + ", ".join(attached)
+                 + ". Refer to them by name in the parts; don't copy their contents.")
+    return text
 
 
 # ---------------------------------------------------------------- 2. run (each helper)

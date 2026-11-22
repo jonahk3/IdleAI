@@ -38,6 +38,30 @@ The window just runs the same commands described below; it shows each one in blu
 > Mac: if you get `No module named 'tkinter'`, install Python from python.org
 > (Homebrew users: `brew install python-tk`).
 
+## Models, images and files
+
+Pick a model in the GUI (or `--model NAME`). **Missing models download automatically**:
+your laptop downloads the one you pick, and helper laptops that don't have it are asked to
+download it in the background (they join in once it's done; their window shows progress).
+In Host mode, tick the models to download and share up front (`peer.server --models ...`).
+
+| Model | Reads | Download | Notes |
+|---|---|---|---|
+| `llama3.2:3b` | text | ~2 GB | default, fast |
+| `lfm3` | text | ~1 GB | tiny and fast |
+| `lfm3-omni` | text + **images** | ~2 GB | |
+| `mimo-v2.6` | text + **images** | ~7 GB | needs ~16 GB RAM |
+| `autotrust-jev` | text | ~11 GB | a *decision* model (choices/ratings), may plan poorly |
+
+These need a recent Ollama (0.40.15 or newer). Update it from <https://ollama.com/download> if a
+download fails. The list lives in `peer/config.py` (`MODELS`).
+
+**Attachments** (GUI: *Attach files...*; terminal: `--file a.png notes.txt`):
+- Images (png, jpg, webp, gif, bmp) need a model that reads images.
+- Text files (txt, md, csv, json, code...) are added to the prompt. PDF/Word aren't supported yet.
+- Every helper laptop gets the attachments too (helpers never see the original task).
+- Answers are still text only.
+
 ## 1. One-time setup (on EVERY laptop)
 
 1. **Install Python 3.11 or newer** from <https://www.python.org/downloads/>.
@@ -213,6 +237,7 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `peer/prompts.py` | Every instruction given to the models (plan, helper, rewrite, check), in one place to tune |
 | `peer/split.py` | Splits one prompt into parts, runs them on all laptops at once, then collects and saves the answers |
 | `peer/gui.py` | The window: builds and runs the commands below for you, remembers settings |
+| `peer/attachments.py` | Reads attached files and images and adds them to messages |
 | `peer/room.py` | Rooms: posts/reads laptop addresses on ntfy.sh so peers find each other |
 | `peer/discovery.py` | Finds other laptops on the Wi-Fi (UDP broadcast on port 8766) |
 | `peer/ollama.py` | Talks to the Ollama on this laptop |

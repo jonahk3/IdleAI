@@ -13,7 +13,8 @@ import json
 import urllib.error
 import urllib.request
 
-from peer.config import DEFAULT_MODEL, OLLAMA_TIMEOUT, PEER_PORT
+from peer import attachments
+from peer.config import DEFAULT_MODEL, MODELS, OLLAMA_TIMEOUT, PEER_PORT
 
 
 class PeerClient:
@@ -26,6 +27,18 @@ class PeerClient:
     def info(self, timeout: float = 5) -> dict:
         with urllib.request.urlopen(f"{self.base}/info", timeout=timeout) as resp:
             return json.load(resp)
+
+    def request_pull(self, model: str) -> str:
+        """Ask the other laptop to download a model. Returns its status message."""
+        req = urllib.request.Request(f"{self.base}/pull", data=json.dumps({"model": model}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.load(resp).get("status", "?")
+        except urllib.error.HTTPError as e:
+            return json.load(e).get("error", str(e))
+        except (urllib.error.URLError, OSError) as e:
+            return f"couldn't ask: {e}"
 
     def chat(self, model: str, messages: list[dict]):
         """Yield the reply piece by piece. The last item is a dict with stats."""
@@ -57,7 +70,17 @@ def main() -> None:
     parser.add_argument("--peer", required=True, help="other laptop's IP, e.g. 192.168.1.42")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--prompt", help="ask one question, print the answer, and exit")
+    parser.add_argument("--file", nargs="*", default=[], help="files or images to attach to your (first) message")
     args = parser.parse_args()
+    try:
+        att = attachments.load(args.file)
+    except ValueError as e:
+        print(f"[error] {e}")
+        return
+    if att.images and not MODELS.get(args.model, {}).get("images"):
+        print(f"[error] {args.model} can't look at images. Pick one that can: "
+              + ", ".join(m for m, info in MODELS.items() if info["images"]))
+        return
 
     client = PeerClient(args.peer)
     try:
@@ -70,12 +93,22 @@ def main() -> None:
     name = info["name"]
     print(f"Connected to '{name}' at {client.base}" + ("  [FAKE model mode]" if info.get("fake") else ""))
     print(f"Models shared: {', '.join(info['models']) or '(none - they need to `ollama pull` one)'}")
-    model = args.model if args.model in info["models"] or not info["models"] else info["models"][0]
+    model = args.model
+    if model not in info["models"]:
+        status = client.request_pull(model)
+        print(f"'{name}' doesn't have {model} yet. Asked it to download it: {status}.")
+        if args.prompt or not info["models"] or att.images:
+            print("Try again once it's downloaded (their window shows the progress).")
+            return
+        model = info["models"][0]
+        print(f"Using {model} for now.")
+    if att:
+        print(f"Attached: {', '.join(att.names())}")
     if args.prompt:
         print(f"Using model: {model}\n\nyou> {args.prompt}")
         print(f"{name}> ", end="", flush=True)
         try:
-            for piece in client.chat(model, [{"role": "user", "content": args.prompt}]):
+            for piece in client.chat(model, [attachments.user_message(args.prompt, att)]):
                 if isinstance(piece, dict):
                     print(f"\n   ({piece['seconds']}s on {piece['node']})")
                 else:
@@ -108,7 +141,8 @@ def main() -> None:
             print(f"(now using {model})")
             continue
 
-        history.append({"role": "user", "content": text})
+        # Attachments go with the first message only.
+        history.append(attachments.user_message(text, att if not history else None))
         print(f"{name}> ", end="", flush=True)
         reply = ""
         try:

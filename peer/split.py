@@ -19,9 +19,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from peer import ollama, prompts
+from peer import attachments, ollama, prompts
+from peer.attachments import Attachments
 from peer.chat import PeerClient
-from peer.config import DEFAULT_MODEL, KNOWN_PEERS_FILE, PEER_PORT, RESULTS_DIR
+from peer.config import DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT, RESULTS_DIR
 from peer.discovery import discover, local_ip
 from peer.room import lookup, resolve_room
 
@@ -115,7 +116,12 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
             log(f"  skip {host}:{port} (not reachable: {info})")
             continue
         if model not in info["models"]:
-            log(f"  skip '{info['name']}' at {host}:{port} (doesn't have {model})")
+            if model in info.get("downloading", {}):
+                pct = info["downloading"][model]
+                log(f"  skip '{info['name']}' (still downloading {model}" + (f", {pct}%)" if pct is not None else ")"))
+            else:
+                status = PeerClient(host, port).request_pull(model)
+                log(f"  skip '{info['name']}' (doesn't have {model} yet; asked it to download: {status})")
             continue
         devices.append(RemoteDevice(info["name"], host, port))
         working.append((host, port))
@@ -128,7 +134,7 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
 
 
 # ---------------------------------------------------------------- plan, run, combine
-def plan(local: LocalDevice, model: str, task: str, available: int) -> list[str]:
+def plan(local: LocalDevice, model: str, task: str, available: int, att: Attachments) -> list[str]:
     """Ask this laptop's model for one self-contained instruction per helper."""
     if available == 1:
         return [task]
@@ -136,7 +142,7 @@ def plan(local: LocalDevice, model: str, task: str, available: int) -> list[str]
         return [f"(fake) part {i + 1} of {available} of: {task}" for i in range(available)]
     messages = [
         {"role": "system", "content": prompts.PLANNER_SYSTEM},
-        {"role": "user", "content": prompts.planner_user(task, available)},
+        attachments.user_message(prompts.planner_user(task, available, att.names()), att),
     ]
     options = {"temperature": 0}
     try:
@@ -165,10 +171,11 @@ class PartResult:
     notes: list[str] = field(default_factory=list)
 
 
-def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice, model: str) -> PartResult:
+def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice, model: str,
+             att: Attachments) -> PartResult:
     messages = [
         {"role": "system", "content": prompts.WORKER_SYSTEM},
-        {"role": "user", "content": instruction},
+        attachments.user_message(instruction, att),  # helpers get the files too: they never see the task
     ]
     result = PartResult(index, instruction, device.name)
     start = time.time()
@@ -185,23 +192,24 @@ def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice
     return result
 
 
-def combine(local: LocalDevice, model: str, task: str, parts: list[PartResult]) -> str:
+def combine(local: LocalDevice, model: str, task: str, parts: list[PartResult], att: Attachments) -> str:
     """This laptop's model writes the final answer from the helpers' answers."""
     messages = [
         {"role": "system", "content": prompts.COMBINE_SYSTEM},
-        {"role": "user", "content": prompts.combine_user(
-            task, [p.instruction for p in parts], [p.text for p in parts])},
+        attachments.user_message(prompts.combine_user(
+            task, [p.instruction for p in parts], [p.text for p in parts]), att),
     ]
     return local.run(model, messages, options={"temperature": 0}).strip()
 
 
 def save(task: str, model: str, workers: list[Device], parts: list[PartResult],
-         final: str, total_seconds: float) -> Path:
+         final: str, total_seconds: float, attached: list[str]) -> Path:
     out_dir = Path(RESULTS_DIR)
     out_dir.mkdir(exist_ok=True)
     path = out_dir / f"{time.strftime('%Y%m%d-%H%M%S')}.md"
     lines = [
         "# Result", "", f"**Prompt:** {task}", "",
+        *([f"**Attached:** {', '.join(attached)}", ""] if attached else []),
         f"**Model:** {model} · **Laptops used:** {', '.join(d.name for d in workers)} · "
         f"**Total time:** {total_seconds}s", "", "## Final answer", "", final, "", "## Parts", "",
     ]
@@ -217,7 +225,8 @@ def save(task: str, model: str, workers: list[Device], parts: list[PartResult],
 def main() -> None:
     parser = argparse.ArgumentParser(description="Split a prompt across laptops on the network.")
     parser.add_argument("prompt", nargs="?", help="what to ask (you'll be asked if you leave it out)")
-    parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--model", default=DEFAULT_MODEL, choices=list(MODELS))
+    parser.add_argument("--file", nargs="*", default=[], help="files or images to attach to the prompt")
     parser.add_argument("--peers", nargs="*", default=[], help="extra peer IPs, e.g. 192.168.1.42")
     parser.add_argument("--no-discover", action="store_true", help="only use --peers, don't search the Wi-Fi")
     parser.add_argument("--fake", action="store_true", help="this laptop pretends to have a model (testing)")
@@ -241,9 +250,19 @@ def main() -> None:
     prompt = args.prompt or input("Prompt: ").strip()
     if not prompt:
         return
+    try:
+        att = attachments.load(args.file)
+    except ValueError as e:
+        log(f"Can't use the attachment: {e}")
+        return
+    if att.images and not ollama.supports_images(args.model):
+        log(f"{args.model} can't look at images. Pick one that can: "
+            + ", ".join(m for m, info in MODELS.items() if info["images"]))
+        return
+    if att:
+        log(f"Attached: {', '.join(att.names())}")
     local = LocalDevice(args.fake)
-    if not args.fake and args.model not in ollama.installed_models():
-        print(f"This laptop's Ollama doesn't have {args.model}. Run: ollama pull {args.model}")
+    if not args.fake and not ollama.ensure_model(args.model, log):  # downloads it if needed
         return
 
     t0 = time.time()
@@ -256,7 +275,7 @@ def main() -> None:
 
     log(f"PLAN: this laptop is writing one instruction per helper ({len(devices)} laptop(s) available)...")
     plan_start = time.time()
-    instructions = plan(local, args.model, prompt, len(devices))
+    instructions = plan(local, args.model, prompt, len(devices), att)
     log(f"  planned {len(instructions)} part(s) in {time.time() - plan_start:.1f}s")
     # One part: give it to a helper laptop if there is one, so this laptop stays free.
     workers = devices[:len(instructions)] if len(instructions) > 1 else [devices[-1]]
@@ -266,7 +285,7 @@ def main() -> None:
     log("RUN: sending parts out (all at the same time)...")
     parts: list[PartResult] = []
     with ThreadPoolExecutor(max_workers=len(instructions)) as pool:
-        futures = [pool.submit(run_part, i, text, d, local, args.model)
+        futures = [pool.submit(run_part, i, text, d, local, args.model, att)
                    for i, (text, d) in enumerate(zip(instructions, workers))]
         for f in as_completed(futures):
             r = f.result()
@@ -277,13 +296,13 @@ def main() -> None:
     if len(parts) > 1:
         log("COMBINE: this laptop is writing the final answer from the helpers' answers...")
         combine_start = time.time()
-        final = combine(local, args.model, prompt, parts)
+        final = combine(local, args.model, prompt, parts, att)
         log(f"  combined in {time.time() - combine_start:.1f}s")
     else:
         final = parts[0].text
 
     total_secs = round(time.time() - t0, 1)
-    path = save(prompt, args.model, workers, parts, final, total_secs)
+    path = save(prompt, args.model, workers, parts, final, total_secs, att.names())
 
     print("\n" + "=" * 70)
     for p in parts:

@@ -15,14 +15,19 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from peer.config import MODEL_ALLOWLIST, PEER_PORT
+from peer.config import MAX_IMAGE_BYTES, MAX_IMAGES, MODEL_ALLOWLIST, MODELS, PEER_PORT
 from peer.discovery import local_ip, start_responder
-from peer.ollama import chat_stream, installed_models, warm_up
+from peer.ollama import chat_stream, installed_models, pull, supports_images, warm_up
 from peer.room import resolve_room, start_announcer
 
 ALLOWED_ROLES = {"system", "user", "assistant"}
 MAX_MESSAGES = 100
-MAX_CHARS_PER_MESSAGE = 20_000
+MAX_CHARS_PER_MESSAGE = 400_000           # room for attached text files
+MAX_BODY_BYTES = 120_000_000               # whole request, including images
+
+# Downloads in progress on this laptop: {model: percent or None}
+PULLING: dict[str, int | None] = {}
+PULL_LOCK = threading.Lock()
 
 
 def log(msg: str) -> None:
@@ -44,8 +49,47 @@ def validate_chat_request(body: dict) -> tuple[str, list[dict]]:
         content = m.get("content")
         if not isinstance(content, str) or len(content) > MAX_CHARS_PER_MESSAGE:
             raise ValueError("each message needs text content (not too long)")
-        clean.append({"role": m["role"], "content": content})
+        item = {"role": m["role"], "content": content}
+        images = m.get("images")
+        if images:
+            if not supports_images(model):
+                raise ValueError(f"{model} can't look at images; pick a model that can")
+            if (not isinstance(images, list) or len(images) > MAX_IMAGES
+                    or not all(isinstance(i, str) and len(i) <= MAX_IMAGE_BYTES * 4 // 3 + 4 for i in images)):
+                raise ValueError("images must be a short list of base64 strings")
+            item["images"] = images  # pictures are data only: Ollama just looks at them
+        clean.append(item)
     return model, clean
+
+
+def start_pull(model: str) -> bool:
+    """Download a model in the background. Returns False if it's already downloading."""
+    with PULL_LOCK:
+        if model in PULLING:
+            return False
+        PULLING[model] = None
+
+    def work() -> None:
+        size = MODELS.get(model, {}).get("size", "?")
+        log(f"Downloading {model} (about {size}) so teammates can use it...")
+        shown = [-10]
+
+        def progress(percent, status):
+            PULLING[model] = percent
+            if percent is not None and percent >= shown[0] + 10:
+                shown[0] = percent - percent % 10
+                log(f"  {model}: {percent}%")
+        try:
+            pull(model, progress)
+            log(f"{model} downloaded and shared.")
+        except (RuntimeError, ValueError) as e:
+            log(f"Couldn't download {model}: {e} (is Ollama up to date?)")
+        finally:
+            with PULL_LOCK:
+                PULLING.pop(model, None)
+
+    threading.Thread(target=work, daemon=True).start()
+    return True
 
 
 def stream_fake(model: str, messages: list[dict]):
@@ -81,16 +125,39 @@ class PeerHandler(BaseHTTPRequestHandler):
         if self.path == "/info":
             models = MODEL_ALLOWLIST if self.fake else installed_models()
             log(f"{self.client_address[0]} connected (asked for info)")
-            self.send_json(200, {"name": self.node_name, "models": models, "fake": self.fake})
+            self.send_json(200, {"name": self.node_name, "models": models, "fake": self.fake,
+                                 "downloading": dict(PULLING)})
         else:
             self.send_json(404, {"error": "not found"})
 
+    def handle_pull(self) -> None:
+        """A teammate asks this laptop to download an (allowlisted) model."""
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            model = json.loads(self.rfile.read(min(length, 10_000)) or b"{}").get("model")
+        except (ValueError, json.JSONDecodeError):
+            model = None
+        if model not in MODEL_ALLOWLIST:
+            self.send_json(400, {"error": f"model {model!r} is not allowed"})
+            return
+        if self.fake or model in installed_models():
+            self.send_json(200, {"status": "already have it"})
+            return
+        log(f"{self.client_address[0]} asked this laptop to download {model}")
+        started = start_pull(model)
+        self.send_json(200, {"status": "downloading" if started else "already downloading"})
+
     def do_POST(self) -> None:
+        if self.path == "/pull":
+            self.handle_pull()
+            return
         if self.path != "/chat":
             self.send_json(404, {"error": "not found"})
             return
         try:
             length = int(self.headers.get("Content-Length", 0))
+            if length > MAX_BODY_BYTES:
+                raise ValueError("request too big")
             body = json.loads(self.rfile.read(length) or b"{}")
             model, messages = validate_chat_request(body)
         except (ValueError, json.JSONDecodeError) as e:
@@ -99,7 +166,8 @@ class PeerHandler(BaseHTTPRequestHandler):
 
         who = self.client_address[0]
         preview = messages[-1]["content"][:60].replace("\n", " ")
-        log(f"{who} -> {model}: \"{preview}\"")
+        pics = len(messages[-1].get("images", []))
+        log(f"{who} -> {model}: \"{preview}\"" + (f" (+{pics} image(s))" if pics else ""))
 
         # Reply is streamed back as one JSON object per line.
         self.send_response(200)
@@ -131,7 +199,12 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=PEER_PORT)
     parser.add_argument("--fake", action="store_true", help="no Ollama: reply with a fake echo model")
     parser.add_argument("--room", help="room name to post this laptop's address in (remembered)")
+    parser.add_argument("--models", nargs="*", default=[],
+                        help=f"models to download (if needed) and share: {' '.join(MODEL_ALLOWLIST)}")
     args = parser.parse_args()
+    bad = [m for m in args.models if m not in MODEL_ALLOWLIST]
+    if bad:
+        raise SystemExit(f"Unknown model(s): {' '.join(bad)}. Choose from: {' '.join(MODEL_ALLOWLIST)}")
     room = resolve_room(args.room)
 
     PeerHandler.node_name = args.name
@@ -139,12 +212,16 @@ def main() -> None:
 
     if not args.fake:
         models = installed_models()
-        if not models:
-            log("WARNING: couldn't find an allowed model in Ollama.")
-            log(f"  Is Ollama running? Try:  ollama pull {MODEL_ALLOWLIST[0]}")
-        else:
+        if models:
             log(f"Ollama OK. Sharing models: {', '.join(models)}")
-            threading.Thread(target=warm_up, args=(models[0],), daemon=True).start()
+            first = next((m for m in args.models if m in models), models[0])
+            threading.Thread(target=warm_up, args=(first,), daemon=True).start()
+        elif not args.models:
+            log("WARNING: no allowed model downloaded yet. Teammates' requests will start downloads,")
+            log(f"  or start with e.g.:  python -m peer.server --models {MODEL_ALLOWLIST[0]}")
+        for m in args.models:
+            if m not in models:
+                start_pull(m)
 
     server = ThreadingHTTPServer(("0.0.0.0", args.port), PeerHandler)
     if not start_responder(args.name, args.port):

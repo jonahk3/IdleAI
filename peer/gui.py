@@ -20,9 +20,9 @@ import sys
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
-from peer.config import DEFAULT_MODEL, MODEL_ALLOWLIST, RESULTS_DIR, ROOM_FILE
+from peer.config import DEFAULT_MODEL, IMAGE_EXTENSIONS, MODEL_ALLOWLIST, MODELS, RESULTS_DIR, ROOM_FILE
 from peer.room import new_room_name
 
 SETTINGS_FILE = "gui_settings.json"
@@ -39,7 +39,14 @@ DEFAULTS = {
     "search_wifi": True,
     "ask_fake": False,
     "extra_peers": "",
+    "host_models": [DEFAULT_MODEL],  # models to download and share while hosting
 }
+
+
+def model_label(name: str) -> str:
+    info = MODELS[name]
+    kind = "text + images" if info["images"] else "text"
+    return f"{info['about']} · {kind} · ~{info['size']} download"
 
 
 # ---------------------------------------------------------------- settings
@@ -50,6 +57,9 @@ def load_settings() -> dict:
         settings.update({k: v for k, v in saved.items() if k in DEFAULTS})
     except (OSError, ValueError):
         pass
+    if settings["model"] not in MODELS:  # e.g. a model that was removed from the list
+        settings["model"] = DEFAULT_MODEL
+    settings["host_models"] = [m for m in settings.get("host_models") or [] if m in MODELS]
     if not settings["room"]:  # fall back to the room the command-line tools saved
         try:
             settings["room"] = Path(ROOM_FILE).read_text().strip()
@@ -139,13 +149,16 @@ class IdleApp:
         self.root = root
         self.s = load_settings()
         root.title("Idle: share AI between laptops")
-        root.geometry("820x700")
+        root.geometry("840x760")
         root.minsize(640, 520)
 
         self.v = {k: (tk.BooleanVar(value=v) if isinstance(v, bool) else tk.StringVar(value=v))
-                  for k, v in self.s.items()}
-        for var in self.v.values():
+                  for k, v in self.s.items() if not isinstance(v, list)}
+        # One checkbox per model in host mode ("download and share this model").
+        self.host_model_vars = {m: tk.BooleanVar(value=m in self.s["host_models"]) for m in MODELS}
+        for var in list(self.v.values()) + list(self.host_model_vars.values()):
             var.trace_add("write", lambda *_: self.on_settings_changed())
+        self.files: list[str] = []  # attachments for the next prompt (not saved)
 
         self.build_top()
         self.host_frame = self.build_host()
@@ -178,8 +191,11 @@ class IdleApp:
         ttk.Label(shared, text="Model:").grid(row=0, column=3, sticky="e", padx=(16, 4))
         ttk.Combobox(shared, textvariable=self.v["model"], values=MODEL_ALLOWLIST,
                      state="readonly", width=14).grid(row=0, column=4)
-        ttk.Label(shared, text="Everyone uses the same room name. Leave it empty to use IPs instead.",
-                  foreground="gray").grid(row=1, column=0, columnspan=5, sticky="w", pady=(4, 0))
+        self.model_info = ttk.Label(shared, text="", foreground="gray")
+        self.model_info.grid(row=1, column=0, columnspan=5, sticky="w", pady=(4, 0))
+        ttk.Label(shared, text="Everyone uses the same room name. Leave it empty to use IPs instead. "
+                               "Missing models download automatically.",
+                  foreground="gray").grid(row=2, column=0, columnspan=5, sticky="w", pady=(2, 0))
         shared.columnconfigure(1, weight=1)
 
     def build_log(self, parent) -> tk.Text:
@@ -203,7 +219,13 @@ class IdleApp:
                         variable=self.v["host_fake"]).pack(side="left", padx=12)
         self.host_button = ttk.Button(row, text="Start hosting", command=self.toggle_host)
         self.host_button.pack(side="right")
-        ttk.Label(f, text="While hosting, teammates in the same room can use this laptop's model. "
+        models = ttk.LabelFrame(f, text="Models to download (if needed) and share", padding=8)
+        models.pack(fill="x", pady=(8, 0))
+        for i, m in enumerate(MODELS):
+            ttk.Checkbutton(models, text=f"{m}  (~{MODELS[m]['size']}"
+                                         + (", images" if MODELS[m]["images"] else "") + ")",
+                            variable=self.host_model_vars[m]).grid(row=i // 3, column=i % 3, sticky="w", padx=(0, 16))
+        ttk.Label(f, text="While hosting, teammates in the same room can use this laptop's models. "
                           "Keep this window open.", foreground="gray").pack(anchor="w", pady=(6, 0))
         self.host_log = self.build_log(f)
         return f
@@ -230,12 +252,17 @@ class IdleApp:
                         variable=self.v["ask_fake"]).grid(row=2, column=3, sticky="w", pady=(6, 0))
         how.columnconfigure(2, weight=1)
 
+        files = ttk.Frame(f)
+        files.pack(fill="x", pady=(6, 0))
+        ttk.Button(files, text="Attach files...", command=self.attach_files).pack(side="left")
+        ttk.Button(files, text="Clear", command=self.clear_files).pack(side="left", padx=4)
+        self.files_label = ttk.Label(files, text="No attachments", foreground="gray")
+        self.files_label.pack(side="left", padx=8)
+
         self.preview = ttk.Label(f, text="", foreground="gray", wraplength=780, justify="left")
         self.preview.pack(fill="x", pady=(6, 0))
-        self.ask_log = self.build_log(f)
-
         bottom = ttk.Frame(f)
-        bottom.pack(fill="x", pady=(8, 0))
+        bottom.pack(side="bottom", fill="x", pady=(8, 0))  # packed first so it always stays visible
         ttk.Label(bottom, text="Prompt (Ctrl+Enter to send):").pack(anchor="w")
         self.prompt = tk.Text(bottom, height=3, wrap="word")
         self.prompt.pack(side="left", fill="x", expand=True)
@@ -248,6 +275,7 @@ class IdleApp:
         ttk.Button(buttons, text="Stop", command=self.ask_runner_stop).pack(fill="x", pady=2)
         ttk.Button(buttons, text="Results folder",
                    command=lambda: open_folder(PROJECT_DIR / RESULTS_DIR)).pack(fill="x")
+        self.ask_log = self.build_log(f)  # fills the space between settings and prompt
         return f
 
     # ----- helpers -------------------------------------------------------
@@ -266,7 +294,35 @@ class IdleApp:
 
     def on_settings_changed(self) -> None:
         self.s = {k: self.get(k) for k in self.v}
+        self.s["host_models"] = [m for m, var in self.host_model_vars.items() if var.get()]
         save_settings(self.s)
+        if hasattr(self, "files_label"):
+            self.refresh_files()  # also re-checks "this model can't see images"
+        else:
+            self.update_preview()
+
+    # ----- attachments ---------------------------------------------------
+    def attach_files(self) -> None:
+        picked = filedialog.askopenfilenames(title="Attach files or images")
+        self.files += [p for p in picked if p not in self.files]
+        self.refresh_files()
+
+    def clear_files(self) -> None:
+        self.files = []
+        self.refresh_files()
+
+    def has_images(self) -> bool:
+        return any(Path(p).suffix.lower() in IMAGE_EXTENSIONS for p in self.files)
+
+    def refresh_files(self) -> None:
+        if not self.files:
+            self.files_label.configure(text="No attachments", foreground="gray")
+        else:
+            names = ", ".join(Path(p).name for p in self.files)
+            warn = self.has_images() and not MODELS[self.get("model")]["images"]
+            self.files_label.configure(
+                text=names + ("   (this model can't see images: pick lfm3-omni or mimo-v2.6)" if warn else ""),
+                foreground="#b00020" if warn else "black")
         self.update_preview()
 
     def show_mode(self) -> None:
@@ -302,26 +358,31 @@ class IdleApp:
 
     def ask_command(self, prompt: str) -> list[str]:
         if self.get("send_mode") == "one":
-            return self.base("peer.chat") + ["--peer", self.peer_address() or "<pick a laptop>",
-                                             "--model", self.get("model"), "--prompt", prompt]
+            cmd = self.base("peer.chat") + ["--peer", self.peer_address() or "<pick a laptop>",
+                                            "--model", self.get("model"), "--prompt", prompt]
+            return cmd + (["--file", *self.files] if self.files else [])
         cmd = self.base("peer.split") + [prompt, "--model", self.get("model")]
         cmd += self.room_args() + self.peer_args()
         if self.get("ask_fake"):
             cmd.append("--fake")
-        return cmd
+        return cmd + (["--file", *self.files] if self.files else [])  # --file goes last
 
     def host_command(self) -> list[str]:
         cmd = self.base("peer.server") + ["--name", self.get("host_name") or socket.gethostname()]
         cmd += self.room_args()
         if self.get("host_fake"):
             cmd.append("--fake")
-        return cmd
+        models = [m for m, var in self.host_model_vars.items() if var.get()]
+        return cmd + (["--models", *models] if models else [])
 
     def update_preview(self) -> None:
+        if hasattr(self, "model_info") and self.get("model") in MODELS:
+            self.model_info.configure(text=model_label(self.get("model")))
         if not hasattr(self, "prompt"):
             return
         prompt = self.prompt.get("1.0", "end").strip() or "<your prompt>"
-        self.preview.configure(text="Will run:  " + pretty(self.ask_command(prompt)))
+        shown = [Path(a).name if a in self.files else a for a in self.ask_command(prompt)]
+        self.preview.configure(text="Will run:  " + pretty(shown))
         if hasattr(self, "host_runner"):
             self.refresh_host_status()
 
@@ -335,6 +396,11 @@ class IdleApp:
             return
         if self.get("send_mode") == "one" and not self.peer_address():
             messagebox.showinfo("Pick a laptop", "Press 'Find laptops' or type an IP address first.")
+            return
+        if self.has_images() and not MODELS[self.get("model")]["images"]:
+            messagebox.showinfo("Model can't see images",
+                                f"{self.get('model')} only reads text. Pick a model that can see images "
+                                "(" + ", ".join(m for m in MODELS if MODELS[m]["images"]) + ") or remove the images.")
             return
         cmd = self.ask_command(prompt)
         self.write_command(self.ask_log, cmd)

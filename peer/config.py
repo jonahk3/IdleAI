@@ -6,16 +6,31 @@ PEER_PORT = 8765
 
 # Where this laptop's own Ollama runs. Ollama is never exposed to the network
 # directly; only our peer server talks to it.
-OLLAMA_URL = "http://localhost:11434"
+OLLAMA_URL = os.environ.get("IDLE_OLLAMA_URL", "http://localhost:11434")
 
-# Safety: the peer server only runs models on this list, no matter what a
-# remote laptop asks for.
-MODEL_ALLOWLIST = [
-    "llama3.2:3b",
-    "llama3.2:1b",
-]
+# The models this project can use. These names are Ollama library names
+# (https://ollama.com/library), so `ollama pull <name>` downloads them.
+#   images: True if the model can look at pictures you attach.
+#   size:   rough download size, shown in the GUI and logs.
+MODELS = {
+    "llama3.2:3b":   {"images": False, "size": "2 GB",  "about": "Meta Llama 3.2, small and fast"},
+    "lfm3":          {"images": False, "size": "1 GB",  "about": "Liquid AI LFM3, tiny and fast"},
+    "lfm3-omni":     {"images": True,  "size": "2 GB",  "about": "Liquid AI LFM3 Omni"},
+    "mimo-v2.6":     {"images": True,  "size": "7 GB",  "about": "Xiaomi MiMo V2.6 9B, needs ~16 GB RAM"},
+    "autotrust-jev": {"images": False, "size": "11 GB", "about": "AutoTrust JEV 9B decision model (choices/ratings)"},
+}
+
+# Safety: the peer server only runs (and only downloads) models on this list,
+# no matter what a remote laptop asks for.
+MODEL_ALLOWLIST = list(MODELS)
 
 DEFAULT_MODEL = "llama3.2:3b"
+
+# Attachments (files and images you add to a prompt).
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+MAX_FILE_CHARS = 200_000          # longer text files are cut off
+MAX_IMAGE_BYTES = 10_000_000      # per image
+MAX_IMAGES = 8
 
 # Max time (seconds) to wait for Ollama to answer one message.
 OLLAMA_TIMEOUT = 300
