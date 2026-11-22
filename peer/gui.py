@@ -24,6 +24,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from peer.config import COORDINATOR_MODEL, DEFAULT_MODEL, IMAGE_EXTENSIONS, MODEL_ALLOWLIST, MODELS, RESULTS_DIR, ROOM_FILE
+from peer import attachments
 from peer.room import new_room_name
 
 SETTINGS_FILE = "gui_settings.json"
@@ -166,6 +167,8 @@ class IdleApp:
         self.ask_frame = self.build_ask()
         self.ask_runner = Runner(root, lambda t: self.write(self.ask_log, t), self.ask_finished)
         self.find_runner = Runner(root, lambda t: self.write(self.ask_log, t), self.find_finished)
+        self.pip_runner = Runner(root, lambda t: self.write(self.ask_log, t), self.pip_finished)
+        self.attach_error = ""  # why the current attachments can't be sent (empty = fine)
         self.host_runner = Runner(root, lambda t: self.write(self.host_log, t), self.host_finished)
 
         self.show_mode()
@@ -264,7 +267,9 @@ class IdleApp:
         files.pack(fill="x", pady=(6, 0))
         ttk.Button(files, text="Attach files...", command=self.attach_files).pack(side="left")
         ttk.Button(files, text="Clear", command=self.clear_files).pack(side="left", padx=4)
-        self.files_label = ttk.Label(files, text="No attachments", foreground="gray")
+        self.pdf_button = ttk.Button(files, text="Install PDF support", command=self.install_pdf_support)
+        # (only shown when a PDF is attached and pypdf isn't installed)
+        self.files_label = ttk.Label(files, text="No attachments", foreground="gray", wraplength=520, justify="left")
         self.files_label.pack(side="left", padx=8)
 
         self.preview = ttk.Label(f, text="", foreground="gray", wraplength=780, justify="left")
@@ -347,7 +352,14 @@ class IdleApp:
 
     # ----- attachments ---------------------------------------------------
     def attach_files(self) -> None:
-        picked = filedialog.askopenfilenames(title="Attach files or images")
+        images = " ".join(f"*{e}" for e in sorted(IMAGE_EXTENSIONS))
+        picked = filedialog.askopenfilenames(title="Attach files or images", filetypes=[
+            ("Supported files", f"*.pdf *.txt *.md *.csv *.json *.html *.xml *.log *.py *.js {images}"),
+            ("PDF", "*.pdf"),
+            ("Images (for image models)", images),
+            ("Text files", "*.txt *.md *.csv *.json *.html *.xml *.log"),
+            ("All files (any plain-text file works)", "*"),
+        ])
         self.files += [p for p in picked if p not in self.files]
         self.refresh_files()
 
@@ -359,15 +371,44 @@ class IdleApp:
         return any(Path(p).suffix.lower() in IMAGE_EXTENSIONS for p in self.files)
 
     def refresh_files(self) -> None:
+        """Check the attachments now (same rules as the command line) and show what they are."""
+        self.attach_error = ""
+        self.pdf_button.pack_forget()
         if not self.files:
             self.files_label.configure(text="No attachments", foreground="gray")
-        else:
-            names = ", ".join(Path(p).name for p in self.files)
-            warn = self.has_images() and not MODELS[self.get("model")]["images"]
-            self.files_label.configure(
-                text=names + ("   (this model can't see images: pick lfm3-omni or mimo-v2.6)" if warn else ""),
-                foreground="#b00020" if warn else "black")
+            self.update_preview()
+            return
+        try:
+            summary = ", ".join(attachments.load(self.files).summary)
+        except ValueError as e:
+            self.attach_error = str(e)
+            summary = ", ".join(Path(p).name for p in self.files)
+        if not self.attach_error and self.has_images() and not MODELS[self.get("model")]["images"]:
+            self.attach_error = ("this model can't see images: pick "
+                                 + " or ".join(m for m in MODELS if MODELS[m]["images"]))
+        if self.attach_error == attachments.PDF_INSTALL_HINT:
+            self.pdf_button.pack(side="left", padx=4, before=self.files_label)
+            self.attach_error = "PDF support isn't installed yet"
+        self.files_label.configure(text=summary + (f"   ({self.attach_error})" if self.attach_error else ""),
+                                   foreground="#b00020" if self.attach_error else "black")
         self.update_preview()
+
+    def install_pdf_support(self) -> None:
+        if self.pip_runner.running:
+            return
+        cmd = [sys.executable, "-m", "pip", "install", "pypdf"]
+        self.write_command(self.ask_log, cmd)
+        self.pip_button_state("disabled")
+        self.pip_runner.start(cmd)
+
+    def pip_button_state(self, state: str) -> None:
+        self.pdf_button.configure(state=state, text="Installing..." if state == "disabled" else "Install PDF support")
+
+    def pip_finished(self, code: int) -> None:
+        self.pip_button_state("normal")
+        if code != 0:
+            self.write(self.ask_log, "\n(install failed: try running the command above in a terminal)\n")
+        self.refresh_files()
 
     def show_mode(self) -> None:
         self.host_frame.pack_forget()
@@ -441,10 +482,9 @@ class IdleApp:
         if self.get("send_mode") == "one" and not self.peer_address():
             messagebox.showinfo("Pick a laptop", "Press 'Find laptops' or type an IP address first.")
             return
-        if self.has_images() and not MODELS[self.get("model")]["images"]:
-            messagebox.showinfo("Model can't see images",
-                                f"{self.get('model')} only reads text. Pick a model that can see images "
-                                "(" + ", ".join(m for m in MODELS if MODELS[m]["images"]) + ") or remove the images.")
+        self.refresh_files()
+        if self.attach_error:
+            messagebox.showinfo("Can't send these attachments", self.attach_error[0].upper() + self.attach_error[1:])
             return
         cmd = self.ask_command(prompt)
         self.write_command(self.ask_log, cmd)
@@ -501,7 +541,7 @@ class IdleApp:
             self.host_status.configure(text="○ Not hosting", foreground="gray")
 
     def on_close(self) -> None:
-        for r in (self.ask_runner, self.find_runner, self.host_runner):
+        for r in (self.ask_runner, self.find_runner, self.host_runner, self.pip_runner):
             r.stop()
         self.root.destroy()
 

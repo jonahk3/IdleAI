@@ -1,0 +1,3 @@
+# Everything else uses only Python's built-in libraries.
+# Optional: lets the asking laptop attach PDFs (helpers don't need it).
+pypdf>=4.0

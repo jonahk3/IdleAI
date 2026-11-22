@@ -279,7 +279,7 @@ def main() -> None:
             + ", ".join(m for m, info in MODELS.items() if info["images"]))
         return
     if att:
-        log(f"Attached: {', '.join(att.names())}")
+        log(f"Attached: {', '.join(att.summary)}")
     local = LocalDevice(args.fake)
     if not args.fake and not ollama.ensure_model(args.model, log):  # downloads it if needed
         return

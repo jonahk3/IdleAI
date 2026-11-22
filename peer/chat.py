@@ -101,7 +101,7 @@ def main() -> None:
         print("Try again once it's downloaded (their window shows the progress).")
         return
     if att:
-        print(f"Attached: {', '.join(att.names())}")
+        print(f"Attached: {', '.join(att.summary)}")
     if args.prompt:
         print(f"[model] Using {model} on '{name}'\n\nyou> {args.prompt}")
         print(f"{name}> ", end="", flush=True)

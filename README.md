@@ -68,7 +68,12 @@ download fails. The list lives in `peer/config.py` (`MODELS`).
 
 **Attachments** (GUI: *Attach files...*; terminal: `--file a.png notes.txt`):
 - Images (png, jpg, webp, gif, bmp) need a model that reads images.
-- Text files (txt, md, csv, json, code...) are added to the prompt. PDF/Word aren't supported yet.
+- **PDFs**: their text is extracted and added to the prompt. This needs the `pypdf` library on the
+  laptop that attaches the PDF (helpers don't need it): `python -m pip install pypdf`, or press
+  *Install PDF support* in the GUI. Scanned PDFs (no selectable text) and password-protected
+  PDFs are refused; use a screenshot with an image model instead.
+- Text files (txt, md, csv, json, html, code...) are added to the prompt.
+- Word, Excel, audio and video aren't supported yet (save Word/Excel as PDF).
 - Every helper laptop gets the attachments too (helpers never see the original task).
 - Answers are still text only.
 
@@ -86,7 +91,7 @@ download fails. The list lives in `peer/config.py` (`MODELS`).
    Check it works locally: `ollama run llama3.2:3b "say hi"`
 4. **Get this code**: `git clone <this repo's URL>` then `cd Idle`.
 
-No `pip install` is needed. This step uses only Python's built-in libraries.
+No `pip install` is needed, except `pypdf` if you want to attach PDFs (see below).
 
 > On Windows, type `python` wherever this guide says `python3`.
 
