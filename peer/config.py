@@ -70,15 +70,10 @@ STARTING_CREDITS = 500.0         # every session starts with this balance (until
 UNKNOWN_G_CO2_PER_KWH = 1000    # a device with no location is treated as the dirtiest
 LAPTOP_WATTS = 30               # rough power draw while running a model (for CO2 estimates)
 
-# Web app (Lovable UI) + local bridge (python -m peer.api).
+# Optional local web API (python -m peer.api): its port, and the pages allowed to call it
+# (only ones served from this device).
 API_PORT = 8800
-# Web addresses allowed to use the bridge: Lovable-hosted apps and pages on this device.
-API_ALLOWED_ORIGINS = os.environ.get(
-    "IDLE_UI_ORIGINS",
-    r"^(https://[a-z0-9-]+\.(lovable\.app|lovableproject\.com|lovable\.dev)|http://(localhost|127\.0\.0\.1)(:\d+)?)$",
-)
-# Where the web app is published (the bridge prints a link to it). Set after publishing.
-UI_URL = os.environ.get("IDLE_UI_URL", "https://idle-ui.lovable.app")
+API_ALLOWED_ORIGINS = os.environ.get("IDLE_API_ORIGINS", r"^http://(localhost|127\.0\.0\.1)(:\d+)?$")
 
 # Safety settings for every normal answer, so small models don't loop or ramble forever
 # (Ollama stops a looping model with "token repeat limit reached").

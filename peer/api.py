@@ -1,17 +1,16 @@
-"""Local bridge for the Idle web app (the Lovable UI).
+"""The engine behind the Idle app, plus an optional local web API.
+
+The Idle app (peer.app) uses the Bridge class below directly: it runs the same commands
+you could type (peer.server, peer.split, peer.chat, peer.check) and reads their output
+(final answer, models used, routing, CO2, credits).
 
     python -m peer.api
 
-A web page can't start programs on your device, so this small server runs on YOUR
-device and the web app talks to it at http://127.0.0.1:8800. It doesn't do any AI
-itself: like the desktop GUI (peer.gui), it runs the same commands you could type
-(peer.server, peer.split, peer.chat, peer.check) and passes their output back.
-
-Safety:
+also serves the same engine as a small web API at http://127.0.0.1:8800, for building
+other front ends. Safety:
   - it only listens on 127.0.0.1, so other devices can't reach it;
-  - it only answers the Idle web app (by web address) and pages on this device;
-  - every request needs the secret key printed when it starts (the link it prints
-    includes it), so other websites can't control it.
+  - it only answers pages served from this device (localhost);
+  - every request needs the secret key printed when it starts.
 """
 import argparse
 import base64
@@ -30,11 +29,11 @@ from pathlib import Path
 
 from peer import attachments, carbon, ollama
 from peer.config import (API_ALLOWED_ORIGINS, API_PORT, COORDINATOR_MODEL, MODELS, RESULTS_DIR,
-                         LAPTOP_WATTS, STARTING_CREDITS, UI_URL)
+                         LAPTOP_WATTS, STARTING_CREDITS)
 from peer.room import new_room_name
 from peer.settings import PROJECT_DIR, load_settings, save_settings
 
-UPLOAD_DIR = PROJECT_DIR / "uploads"   # files the web app attaches (deleted when you clear them)
+UPLOAD_DIR = PROJECT_DIR / "uploads"   # attached files (deleted when they're removed or sent)
 MAX_UPLOAD_BYTES = 30_000_000
 
 
@@ -251,7 +250,7 @@ class Bridge:
         models = [m for m in s.get("host_models") or [] if m in MODELS]
         return cmd + (["--models", *models] if models else [])
 
-    # ----- what the web app shows -----
+    # ----- what the app shows -----
     def state(self) -> dict:
         s = load_settings()
         has_images = any(Path(f["name"]).suffix.lower() in attachments.IMAGE_EXTENSIONS
@@ -367,7 +366,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args) -> None:
         pass
 
-    # ----- CORS: only the Idle web app (and pages on this device) may talk to the bridge -----
+    # ----- CORS: only pages served from this device may use the web API -----
     def allowed_origin(self) -> str | None:
         origin = self.headers.get("Origin")
         if origin and re.match(API_ALLOWED_ORIGINS, origin):
@@ -401,10 +400,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def authorised(self) -> bool:
         if self.headers.get("Origin") and not self.allowed_origin():
-            self.send_json(403, {"error": "this website isn't allowed to use the Idle bridge"})
+            self.send_json(403, {"error": "this website isn't allowed to use the Idle web API"})
             return False
         if not secrets.compare_digest(self.headers.get("X-Idle-Token", ""), self.bridge.token):
-            self.send_json(401, {"error": "wrong or missing key: open the link the bridge printed"})
+            self.send_json(401, {"error": "wrong or missing key: use the key the web API printed"})
             return False
         return True
 
@@ -492,15 +491,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(404, {"error": f"unknown endpoint {method} {path}"})
         except (ValueError, KeyError, TypeError) as e:
             self.send_json(400, {"error": str(e)})
-        except Exception as e:  # never just hang up on the web app
+        except Exception as e:  # never just hang up on the caller
             log(f"ERROR handling {method} {path}: {e!r}")
             self.send_json(500, {"error": f"bridge error: {e!r}"})
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Local bridge for the Idle web app.")
+    parser = argparse.ArgumentParser(description="Serve the Idle engine as a local web API.")
     parser.add_argument("--port", type=int, default=API_PORT)
-    parser.add_argument("--ui", default=UI_URL, help="web address of the Idle web app")
     args = parser.parse_args()
     os.chdir(PROJECT_DIR)  # settings, rooms and results live next to the code
     token = secrets.token_urlsafe(24)
@@ -508,13 +506,12 @@ def main() -> None:
     try:
         server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     except OSError as e:
-        raise SystemExit(f"Can't start the bridge on port {args.port} ({e}). Is it already running?")
+        raise SystemExit(f"Can't start the web API on port {args.port} ({e}). Is it already running?")
     server.daemon_threads = True
-    link = f"{args.ui}#bridge=http://127.0.0.1:{args.port}&key={token}"
-    log(f"Idle bridge running on http://127.0.0.1:{args.port} (only this device can reach it).")
-    log("Open the Idle app with this link (it includes your secret key):")
-    print(f"\n    {link}\n", flush=True)
-    log("Keep this window open while you use the app. Press Ctrl+C to stop (also stops hosting).")
+    log(f"Idle web API running on http://127.0.0.1:{args.port} (only this device can reach it).")
+    log("Send this key in the X-Idle-Token header of every request:")
+    print(f"\n    {token}\n", flush=True)
+    log("Press Ctrl+C to stop (also stops hosting).")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -522,7 +519,7 @@ def main() -> None:
     finally:
         bridge.host.stop()
         bridge.ask.stop()
-        log("Bridge stopped.")
+        log("Web API stopped.")
 
 
 if __name__ == "__main__":

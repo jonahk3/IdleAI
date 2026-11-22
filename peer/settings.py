@@ -1,4 +1,4 @@
-"""Saved settings, shared by the desktop GUI (peer.gui) and the web UI bridge (peer.api)."""
+"""Saved settings, shared by the Idle app (peer.app), the older desktop GUI (peer.gui) and peer.api."""
 import json
 import socket
 from pathlib import Path

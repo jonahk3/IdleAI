@@ -67,13 +67,13 @@ Do this on **every** device (Windows, Mac or Linux).
    newer models need a recent version.
 3. **Get Idle and its three extras:**
    ```bash
-   git clone -b claude/fervent-bell-sskzyv https://github.com/jonahk3/IdleAI.git
+   git clone https://github.com/jonahk3/IdleAI.git
    ```
    ```bash
    cd IdleAI
    ```
    ```bash
-   python3 -m pip install nicegui pywebview pypdf
+   python3 -m pip install -r requirements.txt
    ```
 4. **Start the app:**
    ```bash
