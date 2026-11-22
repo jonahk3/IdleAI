@@ -1,9 +1,10 @@
 """Talking to the Ollama running on THIS device."""
 import json
+import re
 import urllib.error
 import urllib.request
 
-from peer.config import MODEL_ALLOWLIST, MODELS, OLLAMA_TIMEOUT, OLLAMA_URL
+from peer.config import ANSWER_OPTIONS, MODEL_ALLOWLIST, MODELS, OLLAMA_TIMEOUT, OLLAMA_URL
 
 # Keep the model in memory this long after each request. (Ollama's default is 5 minutes,
 # after which the next request must reload the model first, which takes seconds.)
@@ -113,8 +114,9 @@ def chat_stream(model: str, messages: list[dict], json_format: bool | dict = Fal
     body = {"model": model, "messages": messages, "stream": True, "keep_alive": KEEP_ALIVE}
     if json_format:
         body["format"] = json_format if isinstance(json_format, dict) else "json"
-    if options:
-        body["options"] = options
+        body["options"] = dict(options or {})  # JSON is shaped by the schema; no repeat penalty
+    else:
+        body["options"] = {**ANSWER_OPTIONS, **(options or {})}  # stop loops and endless answers
     req = urllib.request.Request(
         f"{OLLAMA_URL}/api/chat",
         data=json.dumps(body).encode(),
@@ -126,6 +128,12 @@ def chat_stream(model: str, messages: list[dict], json_format: bool | dict = Fal
                 continue
             part = json.loads(line)
             if "error" in part:
+                if "repeat" in str(part["error"]).lower():
+                    # Ollama stopped a model that was repeating itself: keep what it wrote so far
+                    # (trim_repetition() removes the repeated tail) instead of losing the answer.
+                    if usage is not None:
+                        usage["cut_off"] = True
+                    return
                 raise RuntimeError(part["error"])
             yield part.get("message", {}).get("content", "")
             if part.get("done"):
@@ -154,3 +162,22 @@ def warm_up(model: str) -> None:
             pass
     except (urllib.error.URLError, OSError):
         pass
+
+
+def trim_repetition(text: str) -> str:
+    """Remove the looping tail small models sometimes produce (the same line or sentence again and again)."""
+    # 1. the same chunk of text repeated 3+ times at the end -> keep it once
+    m = re.search(r"(.{12,}?)(?:\s*\1){2,}\s*$", text, re.S)
+    if m:
+        text = text[:m.start()] + m.group(1)
+    # 2. lines: drop exact repeats that come right after each other, and any line seen 3+ times
+    out, seen = [], {}
+    for line in text.splitlines():
+        key = line.strip()
+        if key and out and out[-1].strip() == key:
+            continue
+        seen[key] = seen.get(key, 0) + 1
+        if key and seen[key] > 2:
+            continue
+        out.append(line)
+    return "\n".join(out).strip()

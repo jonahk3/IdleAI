@@ -222,6 +222,8 @@ class PeerHandler(BaseHTTPRequestHandler):
             earned, detail = credits.credits_for(usage)
             self.write_line({"done": True, "seconds": secs, "node": self.node_name, "model": model,
                              "usage": usage})
+            if usage.pop("cut_off", False):
+                log(f"{who}: the model started repeating itself, so its answer was cut off there")
             log(f"{who} <- reply done ({chars} chars, {secs}s)")
             log(credits.line("earned", earned, f"{detail} for {who}"))
         except (BrokenPipeError, ConnectionResetError):

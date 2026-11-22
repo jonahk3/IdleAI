@@ -24,7 +24,7 @@ from pathlib import Path
 from peer import attachments, carbon, credits, ollama, prompts
 from peer.attachments import Attachments
 from peer.chat import PeerClient
-from peer.config import (COORDINATOR_MODEL, DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT,
+from peer.config import (COMBINE_MAX_TOKENS, COORDINATOR_MODEL, DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT,
                          PLANNER_MAX_TOKENS, RESULTS_DIR)
 from peer.discovery import discover, local_ip
 from peer.room import lookup, resolve_room
@@ -276,7 +276,7 @@ def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice
         result.notes.append(f"'{device.name}' failed: {e}")
         result.device, result.location = fallback.name, fallback.location
         text, result.model, usage = fallback.run_reported(model, messages)
-    result.text = text.strip()
+    result.text = ollama.trim_repetition(text)
     if usage is not None:
         result.credits, result.credit_detail = credits.credits_for(usage)
     result.seconds = round(time.time() - start, 1)
@@ -293,7 +293,7 @@ def combine(local: LocalDevice, model: str, task: str, parts: list[PartResult], 
         {"role": "user", "content": prompts.combine_user(
             task, [p.instruction for p in parts], [p.text for p in parts], att.summary)},
     ]
-    return local.run(model, messages, options={"temperature": 0}).strip()
+    return ollama.trim_repetition(local.run(model, messages, options={"temperature": 0, "num_predict": COMBINE_MAX_TOKENS}))
 
 
 def save(task: str, final: str, attached: list[str]) -> Path:
@@ -409,7 +409,13 @@ def main() -> None:
         log("COMBINE: this device is writing the final answer from the helpers' answers...")
         log(f"  [model] combine on this device: {coordinator}")
         combine_start = time.time()
-        final = combine(local, coordinator, prompt, parts, att)
+        try:
+            final = combine(local, coordinator, prompt, parts, att)
+        except Exception as e:  # Ollama error, timeout...: still give the user the helpers' answers
+            log(f"  merging failed ({e}); showing the helpers' answers one after another instead")
+            final = ""
+        if not final:
+            final = "\n\n".join(p.text for p in parts if p.text)
         log(f"  combined in {time.time() - combine_start:.1f}s")
     else:
         final = parts[0].text

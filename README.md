@@ -282,6 +282,8 @@ Run the server in one terminal and `python3 -m peer.chat --peer localhost` in an
 
 | Problem | Fix |
 |---|---|
+| `token repeat limit reached` in a server window | The model got stuck repeating itself and Ollama stopped it. Idle now keeps the answer up to that point (the repeated part is removed), and every answer is sent with a repeat penalty and a length limit (`ANSWER_OPTIONS` in `peer/config.py`). |
+| The chat sits on "Merging responses…" | This device is writing the final answer; the timer shows it's still working. It's capped at `COMBINE_MAX_TOKENS`, and if merging fails you get the helpers' answers one after another. |
 | A device can't be reached | Run `python -m peer.check <its IP>` (or press **Check device** in the GUI). It tests the connection step by step and says what to fix. |
 | `Remote end closed connection without response` | Something on that device accepted the connection but hung up. Its server now handles a busy port by itself (see *Ports* below); otherwise check its window for an ERROR and run `git pull` there. |
 | `Could not reach http://...` | Is the server running on the other device? Are you on the **same Wi-Fi**? Venue Wi-Fi often blocks devices from seeing each other, so try a **phone hotspot**. Check the firewall prompt (see step 2). |

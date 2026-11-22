@@ -387,7 +387,8 @@ def index() -> None:
             return
         files = [f for f in bridge.files.values() if not f.get("error")]
         conversation.append({"prompt": text, "attached": ", ".join(f["name"] for f in files),
-                             "file_ids": [f["id"] for f in files], "answer": None, "status": "Thinking…"})
+                             "file_ids": [f["id"] for f in files], "answer": None, "status": "Thinking…",
+                             "started": time.time()})
         prompt.set_value("")
         chips_row.set_visibility(False)
         render_chat()
@@ -545,7 +546,8 @@ def index() -> None:
         if conversation and conversation[-1]["answer"] is None:
             turn = conversation[-1]
             if running:
-                turn["status"] = describe_progress(bridge.ask.output)
+                elapsed = int(time.time() - turn.get("started", time.time()))
+                turn["status"] = f"{describe_progress(bridge.ask.output)}  ·  {elapsed // 60}:{elapsed % 60:02d}"
                 if live["status"] is not None:
                     live["status"].set_text(turn["status"])
             else:
