@@ -29,6 +29,11 @@ You do not need to use all devices available. Use as many as parts the task can 
 Do not put terms like 'next', 'previous' or other linking terms. Each model needs to be able to complete its tasks independently of any other tasks being run concurrently. For the primes example, do not return 'put the next 6 primes'. 
 
 
+IMPORTANT: You are ONLY the planner. Do NOT solve the task or compute any part of the answer, not even partly or to check your plan. The helpers do all of the work.
+Never write answer values (numbers, results, names, facts, translations) in your parts. Only describe what each helper must produce.
+Good: "List the prime numbers from 2 to 37." Bad: "List these primes: 2, 3, 5, 7, ..."
+Keep each part short: one or two sentences.
+
 Reply with JSON only: {"parts": ["...", "..."]}"""
 
 
@@ -36,6 +41,7 @@ def planner_user(task: str, helpers: int, attached: list[str] | None = None) -> 
     text = (f"Task: {task}\n\n"
             f"There are {helpers} helpers available. Use as many or as few of them as the task needs "
             f"(at most {helpers}): one part per independent piece, and just 1 part if the task can't be split.")
+    text += "\n\nRemember: only plan the parts. Do not work out any of the answer yourself."
     if attached:
         text += ("\n\nEvery helper also receives these attachments: " + ", ".join(attached)
                  + ". Refer to them by name in the parts; don't copy their contents.")

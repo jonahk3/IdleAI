@@ -167,7 +167,8 @@ class PeerHandler(BaseHTTPRequestHandler):
         who = self.client_address[0]
         preview = messages[-1]["content"][:60].replace("\n", " ")
         pics = len(messages[-1].get("images", []))
-        log(f"{who} -> {model}: \"{preview}\"" + (f" (+{pics} image(s))" if pics else ""))
+        # The model is always the one the asking laptop chose; the host only decides what's downloaded.
+        log(f"{who} asked for [model] {model}: \"{preview}\"" + (f" (+{pics} image(s))" if pics else ""))
 
         # Reply is streamed back as one JSON object per line.
         self.send_response(200)
@@ -181,7 +182,7 @@ class PeerHandler(BaseHTTPRequestHandler):
                 chars += len(piece)
                 self.write_line({"token": piece})
             secs = round(time.time() - start, 1)
-            self.write_line({"done": True, "seconds": secs, "node": self.node_name})
+            self.write_line({"done": True, "seconds": secs, "node": self.node_name, "model": model})
             log(f"{who} <- reply done ({chars} chars, {secs}s)")
         except (BrokenPipeError, ConnectionResetError):
             log(f"{who} disconnected mid-reply")

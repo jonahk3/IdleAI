@@ -40,7 +40,13 @@ The window just runs the same commands described below; it shows each one in blu
 
 ## Models, images and files
 
-Pick a model in the GUI (or `--model NAME`). **Missing models download automatically**:
+**The person asking picks the model** (GUI: *Model for your prompt*, terminal: `--model NAME`),
+and every laptop runs exactly that model for planning, every part and combining. Hosts only choose
+which models they download; they never decide which one runs. Lines marked `[model]` in the
+output (purple in the GUI, plus a *Models used (debug)* bar) show which model ran each step and
+on which laptop.
+
+**Missing models download automatically**:
 your laptop downloads the one you pick, and helper laptops that don't have it are asked to
 download it in the background (they join in once it's done; their window shows progress).
 In Host mode, tick the models to download and share up front (`peer.server --models ...`).

@@ -97,26 +97,24 @@ def main() -> None:
     if model not in info["models"]:
         status = client.request_pull(model)
         print(f"'{name}' doesn't have {model} yet. Asked it to download it: {status}.")
-        if args.prompt or not info["models"] or att.images:
-            print("Try again once it's downloaded (their window shows the progress).")
-            return
-        model = info["models"][0]
-        print(f"Using {model} for now.")
+        # Never swap in another model: the model is always the one YOU chose.
+        print("Try again once it's downloaded (their window shows the progress).")
+        return
     if att:
         print(f"Attached: {', '.join(att.names())}")
     if args.prompt:
-        print(f"Using model: {model}\n\nyou> {args.prompt}")
+        print(f"[model] Using {model} on '{name}'\n\nyou> {args.prompt}")
         print(f"{name}> ", end="", flush=True)
         try:
             for piece in client.chat(model, [attachments.user_message(args.prompt, att)]):
                 if isinstance(piece, dict):
-                    print(f"\n   ({piece['seconds']}s on {piece['node']})")
+                    print(f"\n   ({piece['seconds']}s on {piece['node']}, [model] {piece.get('model', '?')})")
                 else:
                     print(piece, end="", flush=True)
         except (RuntimeError, urllib.error.URLError, OSError) as e:
             print(f"\n[error] {e}")
         return
-    print(f"Using model: {model}. Type /quit to exit.\n")
+    print(f"[model] Using {model} on '{name}'. Type /quit to exit.\n")
 
     history: list[dict] = []
     while True:
@@ -148,7 +146,7 @@ def main() -> None:
         try:
             for piece in client.chat(model, history):
                 if isinstance(piece, dict):
-                    print(f"\n   ({piece['seconds']}s on {piece['node']})\n")
+                    print(f"\n   ({piece['seconds']}s on {piece['node']}, [model] {piece.get('model', '?')})\n")
                 else:
                     reply += piece
                     print(piece, end="", flush=True)

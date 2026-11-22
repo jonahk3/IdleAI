@@ -13,6 +13,7 @@ import codecs
 import json
 import os
 import queue
+import re
 import shlex
 import socket
 import subprocess
@@ -188,14 +189,8 @@ class IdleApp:
         ttk.Label(shared, text="Room:").grid(row=0, column=0, sticky="w")
         ttk.Entry(shared, textvariable=self.v["room"], width=32).grid(row=0, column=1, sticky="we", padx=4)
         ttk.Button(shared, text="New room", command=self.new_room).grid(row=0, column=2)
-        ttk.Label(shared, text="Model:").grid(row=0, column=3, sticky="e", padx=(16, 4))
-        ttk.Combobox(shared, textvariable=self.v["model"], values=MODEL_ALLOWLIST,
-                     state="readonly", width=14).grid(row=0, column=4)
-        self.model_info = ttk.Label(shared, text="", foreground="gray")
-        self.model_info.grid(row=1, column=0, columnspan=5, sticky="w", pady=(4, 0))
-        ttk.Label(shared, text="Everyone uses the same room name. Leave it empty to use IPs instead. "
-                               "Missing models download automatically.",
-                  foreground="gray").grid(row=2, column=0, columnspan=5, sticky="w", pady=(2, 0))
+        ttk.Label(shared, text="Everyone uses the same room name. Leave it empty to use IPs instead.",
+                  foreground="gray").grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
         shared.columnconfigure(1, weight=1)
 
     def build_log(self, parent) -> tk.Text:
@@ -205,6 +200,7 @@ class IdleApp:
         bar = ttk.Scrollbar(frame, command=text.yview)
         text.configure(yscrollcommand=bar.set)
         text.tag_configure("cmd", foreground="#1a6fd6")
+        text.tag_configure("model", foreground="#8a2be2")
         bar.pack(side="right", fill="y")
         text.pack(side="left", fill="both", expand=True)
         return text
@@ -225,13 +221,24 @@ class IdleApp:
             ttk.Checkbutton(models, text=f"{m}  (~{MODELS[m]['size']}"
                                          + (", images" if MODELS[m]["images"] else "") + ")",
                             variable=self.host_model_vars[m]).grid(row=i // 3, column=i % 3, sticky="w", padx=(0, 16))
-        ttk.Label(f, text="While hosting, teammates in the same room can use this laptop's models. "
-                          "Keep this window open.", foreground="gray").pack(anchor="w", pady=(6, 0))
+        ttk.Label(f, text="You choose what this laptop downloads. The person asking chooses which model runs "
+                          "(if it isn't here yet, it downloads automatically). Keep this window open.",
+                  foreground="gray", wraplength=800, justify="left").pack(anchor="w", pady=(6, 0))
         self.host_log = self.build_log(f)
         return f
 
     def build_ask(self) -> ttk.Frame:
         f = ttk.Frame(self.root, padding=(10, 0, 10, 10))
+
+        pick = ttk.Frame(f)
+        pick.pack(fill="x", pady=(0, 6))
+        ttk.Label(pick, text="Model for your prompt:").pack(side="left")
+        ttk.Combobox(pick, textvariable=self.v["model"], values=MODEL_ALLOWLIST,
+                     state="readonly", width=16).pack(side="left", padx=6)
+        self.model_info = ttk.Label(pick, text="", foreground="gray")
+        self.model_info.pack(side="left")
+        ttk.Label(f, text="Every laptop runs the model you pick here (missing ones download automatically).",
+                  foreground="gray").pack(anchor="w")
 
         how = ttk.LabelFrame(f, text="How to send the prompt", padding=8)
         how.pack(fill="x")
@@ -261,6 +268,9 @@ class IdleApp:
 
         self.preview = ttk.Label(f, text="", foreground="gray", wraplength=780, justify="left")
         self.preview.pack(fill="x", pady=(6, 0))
+        self.model_debug = ttk.Label(f, text="Models used (debug): (nothing run yet)", foreground="#8a2be2",
+                                     wraplength=800, justify="left")
+        self.model_debug.pack(fill="x", pady=(4, 0))
         bottom = ttk.Frame(f)
         bottom.pack(side="bottom", fill="x", pady=(8, 0))  # packed first so it always stays visible
         ttk.Label(bottom, text="Prompt (Ctrl+Enter to send):").pack(anchor="w")
@@ -281,9 +291,42 @@ class IdleApp:
     # ----- helpers -------------------------------------------------------
     def write(self, log: tk.Text, text: str, tag: str | None = None) -> None:
         log.configure(state="normal")
+        start = log.index("end-1c linestart")
         log.insert("end", text, tag)
+        # Debug: colour every line that says which model ran.
+        index = start
+        while True:
+            index = log.search("[model]", index, stopindex="end")
+            if not index:
+                break
+            log.tag_add("model", f"{index} linestart", f"{index} lineend")
+            index = f"{index} lineend"
         log.see("end")
         log.configure(state="disabled")
+        if log is getattr(self, "ask_log", None):
+            self.update_model_debug()
+
+    def update_model_debug(self) -> None:
+        """Debug bar: which model ran each step of the current prompt, read from the [model] log lines."""
+        output = self.ask_runner.output if hasattr(self, "ask_runner") else ""
+        steps: dict[str, str] = {}  # step -> "laptop -> model", in order
+        for line in output.splitlines():
+            if "[model]" not in line:
+                continue
+            if m := re.search(r"plan on this laptop: (\S+)", line):
+                steps["plan"] = f"this laptop → {m.group(1)}"
+            elif m := re.search(r"part (\d+) -> (.+?) \[model\] (\S+?):", line):
+                steps[f"part {m.group(1)}"] = f"{m.group(2)} → {m.group(3)} (running)"
+            elif m := re.search(r"part (\d+) done by (.+?) in [\d.]+s \[model\] (\S+)", line):
+                steps[f"part {m.group(1)}"] = f"{m.group(2)} → {m.group(3)} ✓"
+            elif m := re.search(r"combine on this laptop: (\S+)", line):
+                steps["combine"] = f"this laptop → {m.group(1)}"
+            elif m := re.search(r"Using (\S+) on '(.+?)'", line):          # "just one laptop"
+                steps["answer"] = f"{m.group(2)} → {m.group(1)} (running)"
+            elif m := re.search(r"s on (.+?), \[model\] (\S+?)\)", line):
+                steps["answer"] = f"{m.group(1)} → {m.group(2)} ✓"
+        text = "  ·  ".join(f"{k}: {v}" for k, v in steps.items()) or "(nothing run yet)"
+        self.model_debug.configure(text="Models used (debug):  " + text)
 
     def write_command(self, log: tk.Text, cmd: list[str]) -> None:
         self.write(log, f"\n$ {pretty(cmd)}\n", "cmd")

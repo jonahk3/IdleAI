@@ -22,7 +22,7 @@ from pathlib import Path
 from peer import attachments, ollama, prompts
 from peer.attachments import Attachments
 from peer.chat import PeerClient
-from peer.config import DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT, RESULTS_DIR
+from peer.config import DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT, PLANNER_MAX_TOKENS, RESULTS_DIR
 from peer.discovery import discover, local_ip
 from peer.room import lookup, resolve_room
 
@@ -38,6 +38,10 @@ class Device:
 
     def run(self, model: str, messages: list[dict]) -> str:
         raise NotImplementedError
+
+    def run_reported(self, model: str, messages: list[dict]) -> tuple[str, str]:
+        """Run, and also return the model that actually answered."""
+        return self.run(model, messages), model
 
 
 class LocalDevice(Device):
@@ -62,7 +66,16 @@ class RemoteDevice(Device):
         self.client = PeerClient(ip, port)
 
     def run(self, model: str, messages: list[dict]) -> str:
-        return "".join(p for p in self.client.chat(model, messages) if isinstance(p, str))
+        return self.run_reported(model, messages)[0]
+
+    def run_reported(self, model: str, messages: list[dict]) -> tuple[str, str]:
+        text, used = "", "?"
+        for piece in self.client.chat(model, messages):
+            if isinstance(piece, dict):
+                used = piece.get("model", "?")  # the helper says which model it ran
+            else:
+                text += piece
+        return text, used
 
 
 def load_known_peers() -> list[tuple[str, int]]:
@@ -144,7 +157,7 @@ def plan(local: LocalDevice, model: str, task: str, available: int, att: Attachm
         {"role": "system", "content": prompts.PLANNER_SYSTEM},
         attachments.user_message(prompts.planner_user(task, available, att.names()), att),
     ]
-    options = {"temperature": 0}
+    options = {"temperature": 0, "num_predict": PLANNER_MAX_TOKENS}
     try:
         try:
             reply = local.run(model, messages, json_format=prompts.PLAN_SCHEMA, options=options)
@@ -168,6 +181,7 @@ class PartResult:
     device: str
     text: str = ""
     seconds: float = 0.0
+    model: str = ""                 # the model that actually answered (reported by the helper)
     notes: list[str] = field(default_factory=list)
 
 
@@ -180,14 +194,15 @@ def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice
     result = PartResult(index, instruction, device.name)
     start = time.time()
     try:
-        result.text = device.run(model, messages).strip()
+        text, result.model = device.run_reported(model, messages)
     except Exception as e:  # device died, Wi-Fi dropped, Ollama error...
         if device is fallback:
             raise
         log(f"  part {index + 1}: '{device.name}' failed ({e}); redoing it on this laptop")
         result.notes.append(f"'{device.name}' failed: {e}")
         result.device = fallback.name
-        result.text = fallback.run(model, messages).strip()
+        text, result.model = fallback.run_reported(model, messages)
+    result.text = text.strip()
     result.seconds = round(time.time() - start, 1)
     return result
 
@@ -214,7 +229,7 @@ def save(task: str, model: str, workers: list[Device], parts: list[PartResult],
         f"**Total time:** {total_seconds}s", "", "## Final answer", "", final, "", "## Parts", "",
     ]
     for p in parts:
-        lines += [f"### Part {p.index + 1} — {p.device} ({p.seconds}s)", "", f"*{p.instruction}*", ""]
+        lines += [f"### Part {p.index + 1} — {p.device}, {p.model} ({p.seconds}s)", "", f"*{p.instruction}*", ""]
         lines += [f"> note: {n}" for n in p.notes] + ([""] if p.notes else [])
         lines += [p.text, ""]
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -265,6 +280,9 @@ def main() -> None:
     if not args.fake and not ollama.ensure_model(args.model, log):  # downloads it if needed
         return
 
+    # The asking laptop picks the model; every laptop uses exactly this one (hosts only choose
+    # which models they download).
+    log(f"[model] You chose {args.model}: it is used for planning, every part and combining")
     t0 = time.time()
     if not args.fake:  # load the model into memory while we look for laptops
         threading.Thread(target=ollama.warm_up, args=(args.model,), daemon=True).start()
@@ -274,13 +292,15 @@ def main() -> None:
         log(f"  - {d.name} ({d.where})")
 
     log(f"PLAN: this laptop is writing one instruction per helper ({len(devices)} laptop(s) available)...")
+    if len(devices) > 1:
+        log(f"  [model] plan on this laptop: {args.model}")
     plan_start = time.time()
     instructions = plan(local, args.model, prompt, len(devices), att)
     log(f"  planned {len(instructions)} part(s) in {time.time() - plan_start:.1f}s")
     # One part: give it to a helper laptop if there is one, so this laptop stays free.
     workers = devices[:len(instructions)] if len(instructions) > 1 else [devices[-1]]
     for i, (text, d) in enumerate(zip(instructions, workers)):
-        log(f"  part {i + 1} -> {d.name}: {text}")
+        log(f"  part {i + 1} -> {d.name} [model] {args.model}: {text}")
 
     log("RUN: sending parts out (all at the same time)...")
     parts: list[PartResult] = []
@@ -290,11 +310,14 @@ def main() -> None:
         for f in as_completed(futures):
             r = f.result()
             parts.append(r)
-            log(f"  part {r.index + 1} done by {r.device} in {r.seconds}s")
+            log(f"  part {r.index + 1} done by {r.device} in {r.seconds}s [model] {r.model}")
+            if r.model != args.model:
+                log(f"  WARNING: part {r.index + 1} was answered by {r.model}, not {args.model}")
     parts.sort(key=lambda p: p.index)
 
     if len(parts) > 1:
         log("COMBINE: this laptop is writing the final answer from the helpers' answers...")
+        log(f"  [model] combine on this laptop: {args.model}")
         combine_start = time.time()
         final = combine(local, args.model, prompt, parts, att)
         log(f"  combined in {time.time() - combine_start:.1f}s")
@@ -306,7 +329,7 @@ def main() -> None:
 
     print("\n" + "=" * 70)
     for p in parts:
-        print(f"\n## Part {p.index + 1} — by {p.device} ({p.seconds}s)\n{p.instruction}\n")
+        print(f"\n## Part {p.index + 1} — by {p.device} using {p.model} ({p.seconds}s)\n{p.instruction}\n")
         print(p.text)
     print("\n" + "=" * 70 + "\n## Final answer\n")
     print(final)

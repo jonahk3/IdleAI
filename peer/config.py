@@ -49,3 +49,7 @@ KNOWN_PEERS_FILE = "known_peers.json"
 ROOM_SERVICE_URL = os.environ.get("IDLE_ROOM_SERVICE", "https://ntfy.sh")
 ROOM_FILE = "room.txt"          # your room name is remembered here (never commit it)
 ROOM_ANNOUNCE_EVERY = 60 * 60   # re-post our address at least this often (seconds)
+
+# The most tokens the planner may write. A plan is a few short instructions; this stops
+# the planner from spending a long time working out the answer itself.
+PLANNER_MAX_TOKENS = 800
