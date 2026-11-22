@@ -166,6 +166,16 @@ class Bridge:
         self.peers: list[dict] = []
         self.files: dict[str, dict] = {}   # id -> {"id", "name", "path", "summary", "error"}
         self.host.on_line = self.ask.on_line = self.count_credits
+        # Slow checks (is Ollama running? is PDF support installed?) run in the background and
+        # are only READ by state(), so a slow answer can never freeze the app.
+        self.status = {"ollama_running": False, "pdf_supported": attachments.pdf_supported()}
+        threading.Thread(target=self._watch_status, daemon=True).start()
+
+    def _watch_status(self) -> None:
+        while True:
+            self.status["ollama_running"] = ollama.ollama_running()
+            self.status["pdf_supported"] = attachments.pdf_supported()
+            time.sleep(5)
 
     def count_credits(self, line: str) -> None:
         if m := re.search(r"\[credits\] (earned|spent) ([\d.]+) credits", line):
@@ -232,8 +242,8 @@ class Bridge:
             "peers": self.peers,
             "attachments": list(self.files.values()),
             "attachment_warning": warning,
-            "pdf_supported": attachments.pdf_supported(),
-            "ollama_running": ollama.ollama_running(),
+            "pdf_supported": self.status["pdf_supported"],
+            "ollama_running": self.status["ollama_running"],
         }
 
     def ask_result(self, since: int) -> dict:
@@ -301,7 +311,8 @@ class Bridge:
         job.start([sys.executable, "-m", "pip", "install", "pypdf"])
         job.wait(300)
         self.recheck_files()
-        return {"ok": job.exit_code == 0, "log": job.output, "pdf_supported": attachments.pdf_supported()}
+        self.status["pdf_supported"] = attachments.pdf_supported()
+        return {"ok": job.exit_code == 0, "log": job.output, "pdf_supported": self.status["pdf_supported"]}
 
     def remove_file(self, file_id: str) -> None:
         entry = self.files.pop(file_id, None)

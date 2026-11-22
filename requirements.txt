@@ -1,5 +1,6 @@
 # Everything else uses only Python's built-in libraries.
-# Optional: the Idle app (python -m peer.app).
+# Optional: the Idle app (python -m peer.app); pywebview makes it a desktop window.
 nicegui>=3.0
+pywebview>=5.0
 # Optional: lets the asking laptop attach PDFs (helpers don't need it).
 pypdf>=4.0

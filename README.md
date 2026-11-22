@@ -21,19 +21,19 @@ Both laptops can run **both** pieces at the same time, so each can use the other
 
 ## The Idle app (recommended)
 
-A modern window in your browser, in the Idle colours, for everything below: asking, hosting,
-rooms, locations, finding/checking laptops, attachments, results, credits and CO2.
+A modern desktop window in the Idle colours for everything below: asking, hosting, rooms,
+locations, finding/checking laptops, attachments, results, credits and CO2.
 
 ```bash
-python3 -m pip install nicegui
+python3 -m pip install nicegui pywebview
 ```
 ```bash
 python3 -m peer.app
 ```
 
-It opens http://localhost:8080 (only your laptop can reach it). Keep the terminal open while you
-use it; closing it also stops hosting. Like the simple window below, it runs exactly the same
-commands, so everything in this README applies.
+It opens in its own window, like the simple window further down. (Without `pywebview` it opens in
+your browser instead; `--browser` does that on purpose.) Closing the window also stops hosting.
+It runs exactly the same commands as the simple window, so everything in this README applies.
 
 - **Ask**: pick the helpers' model, *Split across laptops* or *Just one laptop*, drop in files,
   type a prompt and press **Send** (Ctrl+Enter). The run view shows each step (plan, parts,

@@ -6,7 +6,7 @@ PEER_PORT = 8765
 
 # Where this laptop's own Ollama runs. Ollama is never exposed to the network
 # directly; only our peer server talks to it.
-OLLAMA_URL = os.environ.get("IDLE_OLLAMA_URL", "http://localhost:11434")
+OLLAMA_URL = os.environ.get("IDLE_OLLAMA_URL", "http://127.0.0.1:11434")  # not "localhost": slow to look up on Windows
 
 # The models this project can use. These names are Ollama library names
 # (https://ollama.com/library), so `ollama pull <name>` downloads them.

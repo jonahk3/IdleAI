@@ -1,12 +1,13 @@
 """The Idle app: a modern window for everything Idle does.
 
-    python -m pip install nicegui      (one time)
+    python -m pip install nicegui pywebview      (one time)
     python -m peer.app
 
-It opens in your browser at http://localhost:8080 (only this laptop can reach it).
-Like the simple window (peer.gui) it runs the same commands you could type
-(peer.server, peer.split, peer.chat, peer.check) and shows what they print, plus a
-clear view of where each part went, which model ran it, CO2 and credits.
+It opens in its own desktop window (like the simple Tkinter window). Without
+pywebview it opens in your browser instead (or use --browser). Either way only
+this laptop can reach it. Like peer.gui it runs the same commands you could type
+(peer.server, peer.split, peer.chat, peer.check) and shows what they print, plus
+a clear view of where each part went, which model ran it, CO2 and credits.
 """
 import argparse
 import os
@@ -455,16 +456,33 @@ def index() -> None:
     ui.timer(1.0, tick)
 
 
+def free_port(preferred: int) -> int:
+    from peer.ports import port_free
+    return next((p for p in range(preferred, preferred + 30) if port_free(p)), preferred)
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="The Idle app (opens in your browser).")
+    parser = argparse.ArgumentParser(description="The Idle app.")
     parser.add_argument("--port", type=int, default=8080)
-    parser.add_argument("--no-browser", action="store_true", help="don't open the browser automatically")
+    parser.add_argument("--browser", action="store_true", help="open in your browser instead of a window")
+    parser.add_argument("--no-browser", action="store_true", help="don't open anything (for testing)")
     args = parser.parse_args()
     os.chdir(PROJECT_DIR)
     app.add_static_files("/assets", str(ASSETS))
     app.on_shutdown(lambda: (bridge.host.stop(), bridge.ask.stop()))
-    ui.run(host="127.0.0.1", port=args.port, title="Idle", favicon=str(ASSETS / "icon.png"),
-           reload=False, show=not args.no_browser, show_welcome_message=True)
+
+    native = not (args.browser or args.no_browser)
+    if native:
+        try:
+            import webview  # noqa: F401  (pywebview draws the desktop window)
+        except ImportError:
+            print("For a desktop window, install pywebview:  python -m pip install pywebview")
+            print("Opening in your browser for now.")
+            native = False
+    port = free_port(args.port)
+    ui.run(host="127.0.0.1", port=port, title="Idle", favicon=str(ASSETS / "icon.png"),
+           reload=False, native=native, window_size=(1300, 900) if native else None,
+           show=not args.no_browser, show_welcome_message=not native)
 
 
 if __name__ in {"__main__", "__mp_main__"}:
