@@ -49,6 +49,7 @@ body {{ background: {PAPER}; color: {NAVY}; font-family: Inter, system-ui, 'Sego
 .bubble-idle {{ background: white; color: {NAVY}; border: 1.5px solid {NAVY}; border-radius: 14px 14px 14px 2px;
                padding: 10px 14px; max-width: 85%; }}
 .bubble-idle p:last-child, .bubble-you p:last-child {{ margin-bottom: 0; }}
+.bubble-you, .bubble-idle, .bubble-you *, .bubble-idle * {{ user-select: text; -webkit-user-select: text; cursor: text; }}
 .chat-box, .chat-box * {{ box-sizing: border-box; }}
 .chat-box {{ max-width: 100%; overflow-x: hidden; }}
 .chat-log pre, .chat-log code {{ white-space: pre-wrap !important; word-break: break-word; }}
@@ -128,21 +129,32 @@ def parse_result(text: str) -> tuple[str, str, str]:
             answer.group(1).strip() if answer else text)
 
 
+def copy_button(text: str) -> None:
+    def copy() -> None:
+        ui.clipboard.write(text)
+        ui.notify("Copied", position="bottom", timeout=1000)
+    ui.button(icon="content_copy", on_click=copy).props("flat dense round size=sm color=primary").tooltip("Copy")
+
+
 def chat_bubbles(prompt: str, attached: str, answer: str | None) -> None:
-    with ui.row().classes("w-full justify-end"):
+    with ui.column().classes("w-full items-end gap-0"):
         with ui.column().classes("bubble-you gap-1"):
             ui.markdown(prompt)
             if attached:
                 ui.label(f"📎 {attached}").classes("text-xs opacity-70")
+        copy_button(prompt)
     if answer is not None:
-        with ui.row().classes("w-full justify-start no-wrap items-start gap-2"):
-            ui.image("/assets/icon.png").classes("w-8 h-8 shrink-0")
+        with ui.column().classes("w-full items-start gap-0"):
             with ui.column().classes("bubble-idle gap-1"):
                 ui.markdown(answer)
+            copy_button(answer)
 
 
 # ---------------------------------------------------------------- world map
 MAP_COLOURS = [[0.0, MINT], [0.15, SAGE], [0.45, "#e0a458"], [1.0, "#b3261e"]]  # low -> high g CO2/kWh
+
+
+MAP_URL = "/assets/world_map.geojson"  # the browser downloads the outlines once and keeps them
 
 
 @lru_cache(maxsize=1)
@@ -150,28 +162,29 @@ def map_shapes() -> dict:
     return json.loads(carbon.MAP_FILE.read_text(encoding="utf-8"))
 
 
+@lru_cache(maxsize=64)
 def world_map(selected: str | None) -> dict:
     """A Plotly choropleth: every country (US states and Canadian provinces on their own), coloured by
     grid g CO2/kWh, with this device's place outlined. Outlines are bundled, so it works offline."""
-    shapes = map_shapes()
+    shapes = map_shapes()  # only read here to know which shapes exist; the outlines go by URL
     data = carbon.provinces()
     codes = [f["id"] for f in shapes["features"] if f["id"] in data]
     traces = [{
-        "type": "choropleth", "geojson": shapes, "featureidkey": "id", "locations": codes,
+        "type": "choropleth", "geojson": MAP_URL, "featureidkey": "id", "locations": codes,
         "z": [data[c]["g_co2_per_kwh"] for c in codes],
         "text": [f"{carbon.place_name(c)}: {data[c]['g_co2_per_kwh']:g} g CO2/kWh" for c in codes],
         "hoverinfo": "text", "zmin": 0, "zmax": 800, "colorscale": MAP_COLOURS,
         "marker": {"line": {"color": "white", "width": 0.4}},
         "colorbar": {"title": {"text": "g CO2/kWh"}, "thickness": 12, "len": 0.8},
     }, {  # places we have no data for
-        "type": "choropleth", "geojson": shapes, "featureidkey": "id",
+        "type": "choropleth", "geojson": MAP_URL, "featureidkey": "id",
         "locations": [f["id"] for f in shapes["features"] if f["id"] not in data],
         "z": [0] * sum(1 for f in shapes["features"] if f["id"] not in data),
         "colorscale": [[0, "#e6e9e9"], [1, "#e6e9e9"]], "showscale": False, "hoverinfo": "skip",
         "marker": {"line": {"color": "white", "width": 0.4}},
     }]
     if selected in data:
-        traces.append({"type": "choropleth", "geojson": shapes, "featureidkey": "id", "locations": [selected],
+        traces.append({"type": "choropleth", "geojson": MAP_URL, "featureidkey": "id", "locations": [selected],
                        "z": [1], "colorscale": [[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]], "showscale": False,
                        "hoverinfo": "skip", "marker": {"line": {"color": NAVY, "width": 2.5}}})
     return {"data": traces, "layout": {
@@ -320,11 +333,11 @@ def index() -> None:
 
                 # ----- chat history (right side)
                 with ui.card().classes("idle-card w-72 shrink-0 gap-2 self-stretch flex flex-col"):  # as tall as the chat
-                    with ui.row().classes("w-full items-center"):
+                    with ui.row().classes("w-full items-center justify-between no-wrap"):
                         ui.label("Chats").classes("idle-caption")
-                        ui.space()
                         ui.button("New chat", icon="add", on_click=lambda: new_chat()
-                                  ).props("unelevated dense no-caps color=accent text-color=dark")
+                                  ).props("unelevated dense no-caps color=accent text-color=dark padding='4px 12px'"
+                                          ).classes("shrink-0")
                     with ui.scroll_area().classes("w-full").style("flex: 1 1 0; min-height: 0"):
                         history_list = ui.column().classes("w-full gap-1")
 
@@ -429,14 +442,14 @@ def index() -> None:
             for turn in conversation:
                 chat_bubbles(turn["prompt"], turn["attached"], turn["answer"])
                 if turn["answer"] is None:
-                    with ui.row().classes("w-full items-center gap-2 pl-10"):
+                    with ui.row().classes("w-full items-center gap-2"):
                         ui.spinner("dots", size="lg", color="primary")
                         live["status"] = ui.label(turn.get("status") or "Thinking…").classes("text-sm opacity-70")
                 else:
-                    with ui.row().classes("w-full items-center gap-3 pl-10"):
+                    with ui.row().classes("w-full items-center gap-3"):
                         ui.label(turn["meta"]).classes("text-xs opacity-60")
                     if turn.get("details"):
-                        with ui.row().classes("w-full pl-10"):
+                        with ui.row().classes("w-full"):
                             with ui.expansion("Details", icon="tune").classes("w-full text-sm"):
                                 for line in turn["details"]:
                                     ui.label(line).classes("text-xs")
@@ -591,9 +604,10 @@ def index() -> None:
                 is_open = chat.get("id") and chat.get("id") == current_chat["id"]
                 when = time.strftime("%d %b, %H:%M", time.localtime(chat.get("updated", 0)))
                 n = len(chat.get("turns", []))
-                with ui.button(on_click=lambda c=chat: open_chat(c)).props("flat no-caps align=left").classes(
-                        "w-full" + (f" bg-[{MINT}]" if is_open else "")):
-                    with ui.column().classes("gap-0 items-start w-full"):
+                with ui.button(on_click=lambda c=chat: open_chat(c)).props(
+                        "flat no-caps align=left padding='6px 8px'").classes(
+                        "w-full rounded" + (f" bg-[{MINT}]" if is_open else "")):
+                    with ui.column().classes("gap-0 items-start w-full text-left"):
                         ui.label(chat.get("title") or "(untitled)").classes("text-sm text-left leading-tight")
                         ui.label(f"{when}" + (f" · {n} messages" if n > 1 else "")).classes("text-xs opacity-50")
 
@@ -726,6 +740,8 @@ def main() -> None:
             print("For a desktop window, install pywebview:  python -m pip install pywebview")
             print("Opening in your browser for now.")
             native = False
+    if native:
+        app.native.window_args["text_select"] = True  # the desktop window blocks selecting text by default
     port = free_port(args.port)
     ui.run(host="127.0.0.1", port=port, title="Idle", favicon=str(ASSETS / "icon.png"),
            reload=False, native=native, window_size=(1300, 900) if native else None,

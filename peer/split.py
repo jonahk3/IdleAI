@@ -156,10 +156,31 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
 
 
 # ---------------------------------------------------------------- carbon-aware routing
+def ranked_by_carbon(devices: list[Device]) -> list[Device]:
+    """Cleanest electricity first. Ties: this device first (it's free), then the order found."""
+    return sorted(devices, key=lambda d: (carbon.intensity(d.location), not isinstance(d, LocalDevice)))
+
+
+def part_workers(devices: list[Device]) -> list[Device]:
+    """The devices allowed to work on parts. This device sits out when its electricity is the dirtiest
+    of them all (it still plans and merges), unless no other device is available."""
+    for d in devices:
+        if not d.location:
+            log(f"  [carbon] '{d.name}' has no location set, so it's treated as the dirtiest "
+                "(set it in Settings > Device location on that device)")
+    local = next(d for d in devices if isinstance(d, LocalDevice))
+    others = [d for d in devices if d is not local]
+    if others and all(carbon.intensity(local.location) > carbon.intensity(d.location) for d in others):
+        log(f"  [carbon] this device has the dirtiest electricity ({carbon.label(local.location)}), "
+            "so it won't do any parts")
+        return others
+    return devices
+
+
 def choose_cleanest(devices: list[Device], parts: int) -> list[Device]:
     """The `parts` devices with the lowest CO2 per kWh. Ties: this device first (it's free),
     then the order they were found."""
-    ranked = sorted(devices, key=lambda d: (carbon.intensity(d.location), not isinstance(d, LocalDevice)))
+    ranked = ranked_by_carbon(devices)
     log("  [carbon] cleanest first: " + ", ".join(f"{d.name} {carbon.label(d.location)}" for d in ranked))
     chosen = ranked[:parts]
     skipped = ranked[parts:]
@@ -259,8 +280,9 @@ class PartResult:
     notes: list[str] = field(default_factory=list)
 
 
-def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice, model: str,
+def run_part(index: int, instruction: str, device: Device, backups: list[Device], model: str,
              att: Attachments) -> PartResult:
+    """Run one part on `device`; if it fails, try the next cleanest device in `backups`."""
     messages = [
         {"role": "system", "content": prompts.WORKER_SYSTEM},
         # helpers get the files they're told to work on (or all of them): they never see the task
@@ -272,15 +294,19 @@ def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice
             "Attach smaller files, or split them into several.")
     result = PartResult(index, instruction, device.name, location=device.location)
     start = time.time()
-    try:
-        text, result.model, usage = device.run_reported(model, messages)
-    except Exception as e:  # device died, Wi-Fi dropped, Ollama error...
-        if device is fallback:
-            raise
-        log(f"  part {index + 1}: '{device.name}' failed ({e}); redoing it on this device")
-        result.notes.append(f"'{device.name}' failed: {e}")
-        result.device, result.location = fallback.name, fallback.location
-        text, result.model, usage = fallback.run_reported(model, messages)
+    candidates = [device] + [d for d in backups if d is not device]
+    for attempt, current in enumerate(candidates):
+        try:
+            text, result.model, usage = current.run_reported(model, messages)
+            result.device, result.location = current.name, current.location
+            break
+        except Exception as e:  # device died, Wi-Fi dropped, Ollama error...
+            result.notes.append(f"'{current.name}' failed: {e}")
+            if attempt + 1 == len(candidates):
+                raise
+            nxt = candidates[attempt + 1]
+            log(f"  part {index + 1}: '{current.name}' failed ({e}); redoing it on '{nxt.name}' "
+                f"[carbon] {carbon.label(nxt.location)} (next cleanest)")
     result.text = ollama.trim_repetition(text)
     if usage is not None:
         result.credits, result.credit_detail = credits.credits_for(usage)
@@ -404,18 +430,20 @@ def main() -> None:
     if len(devices) > 1:
         log(f"  [model] plan on this device: {coordinator}")
     plan_start = time.time()
-    instructions = plan(local, coordinator, prompt, len(devices), att)
+    helpers = part_workers(devices)  # this device sits out if it's the dirtiest
+    instructions = plan(local, coordinator, prompt, len(helpers), att)
     log(f"  planned {len(instructions)} part(s) in {time.time() - plan_start:.1f}s")
     # Carbon-aware routing (decided here in code, not by the planner): the parts go to the
     # devices on the cleanest grids. Even a single part leaves this device if a cleaner one exists.
-    workers = choose_cleanest(devices, len(instructions))
+    workers = choose_cleanest(helpers, len(instructions))
+    backups = ranked_by_carbon(helpers) + ([local] if local not in helpers else [])  # last resort: this device
     for i, (text, d) in enumerate(zip(instructions, workers)):
         log(f"  part {i + 1} -> {d.name} [carbon] {carbon.label(d.location)} [model] {args.model}: {text}")
 
     log("RUN: sending parts out (all at the same time)...")
     parts: list[PartResult] = []
     with ThreadPoolExecutor(max_workers=len(instructions)) as pool:
-        futures = [pool.submit(run_part, i, text, d, local, args.model, att)
+        futures = [pool.submit(run_part, i, text, d, backups, args.model, att)
                    for i, (text, d) in enumerate(zip(instructions, workers))]
         for f in as_completed(futures):
             r = f.result()

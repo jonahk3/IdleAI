@@ -126,6 +126,9 @@ After the plan is ready, **code (not the AI) decides where the parts go**: all a
 yours included, are ranked by g CO2/kWh and the cleanest ones get the parts. Even a task that
 isn't split (1 part) is sent to a helper if that helper's grid is cleaner than yours; on a tie
 your device keeps it (it's free). A device with no location is used last.
+**If your device has the dirtiest electricity of all the available devices, it does no parts at all**
+(it still plans and merges), even if that means fewer parts. If a helper fails, its part goes to the
+next cleanest device, not automatically to yours.
 
 `[carbon]` lines (teal in the GUI) show the ranking, where each part went, and a rough CO2
 estimate (device power x time x grid intensity, `LAPTOP_WATTS` in `peer/config.py`) compared
