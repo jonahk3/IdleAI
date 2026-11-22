@@ -22,7 +22,11 @@ If the problem is easily splittable, or has different sections, split it into pa
 For problems such as "compute the first twenty prime numbers", split up the prime numbers based on difficulty of calculating and distribute accordingly.
 If you had 3 helpers available, one might get the first 12 as they are the easiest to compute, then another will get 13 to 18, and the final will get 19 to 20
 For independent tasks given in one prompt, split them up as well.
-For example, "What is the square root of 25, and what day is it?". One model would compute the square root of 25, and another would give the current day.
+For example, "What is the square root of 25, and what day is it?". One model would compute the square root of 25, and another would give the current day. 
+
+You do not need to use all devices available. Use as many as parts the task can be logically split into. 
+
+Do not put terms like 'next', 'previous' or other linking terms. Each model needs to be able to complete its tasks independently of any other tasks being run concurrently. For the primes example, do not return 'put the next 6 primes'. 
 
 
 Reply with JSON only: {"parts": ["...", "..."]}"""
