@@ -7,8 +7,8 @@
 - Anything else is read as text (txt, md, csv, json, code, ...) and added to
   the prompt. Other binary files (Word, Excel, zip, audio...) are refused for now.
 
-Every helper laptop receives the attachments too, because helpers never see the
-original task.
+Only the helpers receive the attachments (in full). The planner only gets each
+file's name, type and length, and the combine step gets no files at all.
 """
 import base64
 import logging
@@ -23,21 +23,10 @@ class Attachments:
     texts: list[tuple[str, str]] = field(default_factory=list)   # (file name, contents)
     images: list[str] = field(default_factory=list)              # base64-encoded images
     image_names: list[str] = field(default_factory=list)
-    summary: list[str] = field(default_factory=list)             # "report.pdf (PDF, 12 pages)", ...
+    summary: list[str] = field(default_factory=list)             # "report.pdf (PDF, 12 pages, 30,512 characters)"
 
     def __bool__(self) -> bool:
         return bool(self.texts or self.images)
-
-    def without_images(self) -> "Attachments":
-        """Same attachments minus the pictures (their names are still listed)."""
-        return Attachments(self.texts, [], self.image_names, self.summary)
-
-    def preview(self, chars: int) -> "Attachments":
-        """The planner only needs to know what each file is, not read all of it (that's slow)."""
-        short = [(name, content if len(content) <= chars else
-                  content[:chars] + "\n[... preview only: every helper receives the whole file ...]")
-                 for name, content in self.texts]
-        return Attachments(short, self.images, self.image_names, self.summary)
 
     def names(self) -> list[str]:
         return [name for name, _ in self.texts] + self.image_names
@@ -100,7 +89,7 @@ def load(paths: list[str]) -> Attachments:
                 raise ValueError(f"too many images (max {MAX_IMAGES})")
             result.images.append(base64.b64encode(data).decode())
             result.image_names.append(path.name)
-            result.summary.append(f"{path.name} (image)")
+            result.summary.append(f"{path.name} (image, {max(1, round(len(data) / 1000)):,} KB)")
             continue
         if path.suffix.lower() == ".pdf":
             content, pages = read_pdf(path)
@@ -108,8 +97,8 @@ def load(paths: list[str]) -> Attachments:
             if cut:
                 content = content[:MAX_FILE_CHARS] + "\n[... PDF cut off here, it was too long ...]"
             result.texts.append((path.name, content))
-            result.summary.append(f"{path.name} (PDF, {pages} page{'s' if pages != 1 else ''}"
-                                  + (", cut off" if cut else "") + ")")
+            result.summary.append(f"{path.name} (PDF, {pages} page{'s' if pages != 1 else ''}, "
+                                  f"{len(content):,} characters" + (", cut off" if cut else "") + ")")
             continue
         try:
             content = path.read_text(encoding="utf-8")
@@ -120,7 +109,7 @@ def load(paths: list[str]) -> Attachments:
         if cut:
             content = content[:MAX_FILE_CHARS] + "\n[... file cut off here, it was too long ...]"
         result.texts.append((path.name, content))
-        result.summary.append(f"{path.name} (text" + (", cut off" if cut else "") + ")")
+        result.summary.append(f"{path.name} (text, {len(content):,} characters" + (", cut off" if cut else "") + ")")
     return result
 
 

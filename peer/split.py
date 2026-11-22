@@ -25,7 +25,7 @@ from peer import attachments, ollama, prompts
 from peer.attachments import Attachments
 from peer.chat import PeerClient
 from peer.config import (COORDINATOR_MODEL, DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT,
-                         PLANNER_FILE_PREVIEW_CHARS, PLANNER_MAX_TOKENS, RESULTS_DIR)
+                         PLANNER_MAX_TOKENS, RESULTS_DIR)
 from peer.discovery import discover, local_ip
 from peer.room import lookup, resolve_room
 
@@ -158,8 +158,8 @@ def plan(local: LocalDevice, model: str, task: str, available: int, att: Attachm
         return [f"(fake) part {i + 1} of {available} of: {task}" for i in range(available)]
     messages = [
         {"role": "system", "content": prompts.PLANNER_SYSTEM},
-        attachments.user_message(prompts.planner_user(task, available, att.names()),
-                                 att.preview(PLANNER_FILE_PREVIEW_CHARS)),
+        # The planner gets the files' names, types and lengths only, never their contents.
+        {"role": "user", "content": prompts.planner_user(task, available, att.summary)},
     ]
     options = {"temperature": 0, "num_predict": PLANNER_MAX_TOKENS}
     try:
@@ -233,8 +233,9 @@ def combine(local: LocalDevice, model: str, task: str, parts: list[PartResult], 
     """This laptop's model writes the final answer from the helpers' answers."""
     messages = [
         {"role": "system", "content": prompts.COMBINE_SYSTEM},
-        attachments.user_message(prompts.combine_user(
-            task, [p.instruction for p in parts], [p.text for p in parts]), att),
+        # No files here: the combiner may only use what the helpers wrote.
+        {"role": "user", "content": prompts.combine_user(
+            task, [p.instruction for p in parts], [p.text for p in parts], att.summary)},
     ]
     return local.run(model, messages, options={"temperature": 0}).strip()
 
@@ -322,14 +323,12 @@ def main() -> None:
             devices = devices[:1]
         else:
             threading.Thread(target=ollama.warm_up, args=(coordinator,), daemon=True).start()
-    # The coordinator only sees pictures if it can (it still gets the image names).
-    coord_att = att if ollama.supports_images(coordinator) else att.without_images()
 
     log(f"PLAN: this laptop is writing one instruction per helper ({len(devices)} laptop(s) available)...")
     if len(devices) > 1:
         log(f"  [model] plan on this laptop: {coordinator}")
     plan_start = time.time()
-    instructions = plan(local, coordinator, prompt, len(devices), coord_att)
+    instructions = plan(local, coordinator, prompt, len(devices), att)
     log(f"  planned {len(instructions)} part(s) in {time.time() - plan_start:.1f}s")
     # One part: give it to a helper laptop if there is one, so this laptop stays free.
     workers = devices[:len(instructions)] if len(instructions) > 1 else [devices[-1]]
@@ -353,7 +352,7 @@ def main() -> None:
         log("COMBINE: this laptop is writing the final answer from the helpers' answers...")
         log(f"  [model] combine on this laptop: {coordinator}")
         combine_start = time.time()
-        final = combine(local, coordinator, prompt, parts, coord_att)
+        final = combine(local, coordinator, prompt, parts, att)
         log(f"  combined in {time.time() - combine_start:.1f}s")
     else:
         final = parts[0].text

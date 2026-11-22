@@ -44,8 +44,7 @@ The window just runs the same commands described below; it shows each one in blu
 `--model NAME`), and every helper runs exactly that model for its part. **Splitting and combining
 always use `llama3.2:3b`** on the asking laptop (the "coordinator", `COORDINATOR_MODEL` in
 `peer/config.py`, or `--coordinator NAME`), because smaller models often return empty or one-part
-plans. It downloads automatically if missing. Llama can't see images, so attached images go to the
-helpers only; the planner just gets their file names. Hosts only choose
+plans. It downloads automatically if missing. Attached files and images go to the helpers only. Hosts only choose
 which models they download; they never decide which one runs. Lines marked `[model]` in the
 output (purple in the GUI, plus a *Models used (debug)* bar) show which model ran each step and
 on which laptop.
@@ -73,7 +72,10 @@ download fails. The list lives in `peer/config.py` (`MODELS`).
   PDFs are refused; use a screenshot with an image model instead.
 - Text files (txt, md, csv, json, html, code...) are added to the prompt.
 - Word, Excel, audio and video aren't supported yet (save Word/Excel as PDF).
-- Every helper laptop gets the attachments too (helpers never see the original task).
+- **Only the helpers get the files** (in full). The planner only gets each file's name, type and
+  length (e.g. `Resume.pdf (PDF, 2 pages, 4,812 characters)`), and is told every helper has all
+  of them, so parts can name the file to work on. The combine step gets no files, so it can only
+  use what the helpers wrote.
 - Answers are still text only.
 
 ## 1. One-time setup (on EVERY laptop)

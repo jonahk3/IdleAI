@@ -57,6 +57,3 @@ ROOM_ANNOUNCE_EVERY = 60 * 60   # re-post our address at least this often (secon
 # The most tokens the planner may write. A plan is a few short instructions; this stops
 # the planner from spending a long time working out the answer itself.
 PLANNER_MAX_TOKENS = 800
-
-# The planner sees only the first this-many characters of each attached file (helpers get it all).
-PLANNER_FILE_PREVIEW_CHARS = 1500

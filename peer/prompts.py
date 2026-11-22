@@ -49,8 +49,11 @@ def planner_user(task: str, helpers: int, attached: list[str] | None = None) -> 
             f"(at most {helpers}): one part per independent piece, and just 1 part if the task can't be split.")
     text += "\n\nRemember: only plan the parts. Do not work out any of the answer yourself."
     if attached:
-        text += ("\n\nEvery helper also receives these attachments: " + ", ".join(attached)
-                 + ". Refer to them by name in the parts; don't copy their contents.")
+        text += ("\n\nThe user attached these files:\n" + "\n".join(f"- {f}" for f in attached)
+                 + "\nYou can't see what is inside them. Every helper receives ALL of these files in full, "
+                 "together with its part, so a part can say which file(s) to work on by name "
+                 "(e.g. \"Rate Resume.pdf on a scale of 1 to 10\"). Use the type and length to decide how to "
+                 "split the work, e.g. one long file per helper.")
     return text
 
 
@@ -71,9 +74,13 @@ Use ONLY what the helpers wrote. Do NOT add any information of your own.
 Reply with only the final answer."""
 
 
-def combine_user(task: str, parts: list[str], answers: list[str]) -> str:
+def combine_user(task: str, parts: list[str], answers: list[str], attached: list[str] | None = None) -> str:
     pieces = "\n\n".join(
         f"--- Helper {i + 1} was asked: {p}\nAnswer:\n{a}" for i, (p, a) in enumerate(zip(parts, answers))
     )
-    return (f"Task: {task}\n\n{pieces}\n\n"
+    files = ""
+    if attached:
+        files = ("The helpers read these attached files: " + ", ".join(attached)
+                 + ". You don't have the files: rely only on the helpers' answers.\n\n")
+    return (f"Task: {task}\n\n{files}{pieces}\n\n"
             "Now combine the helpers' answers into the final answer. Use only what they wrote; add nothing.")
