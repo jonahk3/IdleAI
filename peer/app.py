@@ -20,7 +20,7 @@ from nicegui import app, run, ui
 from peer import carbon
 from peer.api import Bridge, co2_summary, final_answer, models_used, routing
 from peer.config import COORDINATOR_MODEL, MODELS, RESULTS_DIR, STARTING_CREDITS
-from peer.room import new_room_name
+from peer.room import ROOM_PATTERN, new_room_name, normalize_room
 from peer.settings import PROJECT_DIR, load_settings, save_settings
 
 ASSETS = Path(__file__).with_name("assets")
@@ -157,16 +157,28 @@ def index() -> None:
             ui.label("model computing software").classes("idle-caption leading-none")
         with ui.tabs().classes("ml-6") as tabs:
             t_ask = ui.tab("Ask", icon="chat_bubble_outline")
-            t_host = ui.tab("Host", icon="dns")
             t_net = ui.tab("Grid", icon="hub")
             t_co2 = ui.tab("Your CO2 use", icon="eco")
             t_hist = ui.tab("Chat history", icon="history")
+            t_set = ui.tab("Settings", icon="settings")
         ui.space()
         ollama_badge = ui.label().classes("idle-pill text-xs")
         hosting_badge = ui.label("● Hosting").classes(f"idle-pill bg-[{MINT}] text-xs")
         credits_pill = ui.label().classes("idle-pill font-semibold")
         with credits_pill:
             credits_tip = ui.tooltip()
+
+    # ----- server window (pops out over the app) -----
+    with ui.dialog().props("maximized=false") as server_dialog, ui.card().classes("idle-card w-[900px] max-w-[95vw] gap-2"):
+        with ui.row().classes("w-full items-center"):
+            ui.label("Server window").classes("idle-title text-xl")
+            server_state = ui.label().classes("idle-pill text-xs")
+            ui.space()
+            host_earned = ui.label().classes("text-sm")
+            ui.button(icon="close", on_click=lambda: server_dialog.close()).props("flat round")
+        ui.label("Requests from other devices on your grid appear here: when a task arrives, and when it's "
+                 "finished and the answer is sent back.").classes("text-xs opacity-60")
+        host_feed = LogFeed(bridge.host, "h-[60vh]")
 
     with ui.tab_panels(tabs, value=t_ask, animated=False).classes(f"w-full max-w-5xl mx-auto bg-[{PAPER}]"):
 
@@ -181,8 +193,11 @@ def index() -> None:
                           ).classes("w-80").props("outlined dense")
                 model_about = ui.label().classes("text-sm opacity-70")
                 ui.space()
-                ui.label(f"Split across your grid, lowest-carbon electricity first · planned by {COORDINATOR_MODEL}"
-                         ).classes("text-xs opacity-50")
+                host_button = ui.button(on_click=lambda: toggle_host()).props("unelevated no-caps")
+                ui.button("Server window", icon="open_in_new", on_click=lambda: server_dialog.open()
+                          ).props("outline no-caps color=dark")
+            ui.label(f"Prompts are split across your grid, lowest-carbon electricity first · planned by "
+                     f"{COORDINATOR_MODEL}. Hosting shares this device's AI with your grid.").classes("text-xs opacity-50")
 
             chat_scroll = ui.scroll_area().classes("w-full h-[56vh] idle-soft")
             with chat_scroll:
@@ -212,41 +227,12 @@ def index() -> None:
                     send_button = ui.button(icon="arrow_upward", on_click=lambda: send()
                                             ).props("round unelevated color=dark").tooltip("Send")
 
-        # ================================================================ HOST
-        with ui.tab_panel(t_host).classes("gap-4"):
-            with ui.card().classes("idle-card w-full"):
-                ui.label("Share this device's AI").classes("idle-title text-xl")
-                ui.label("You choose what this device downloads. The person asking chooses which model runs "
-                         "(missing ones download automatically).").classes("text-sm opacity-70")
-                with ui.row().classes("w-full items-end gap-6"):
-                    ui.input("Your name", value=s["host_name"],
-                             on_change=lambda e: save("host_name", e.value.strip())).props("outlined dense")
-                    ui.space()
-                    host_button = ui.button(on_click=lambda: toggle_host()).props("unelevated no-caps size=lg")
-                ui.label("Models to download and share").classes("idle-caption mt-2")
-                with ui.row().classes("gap-6"):
-                    for m, info in MODELS.items():
-                        ui.checkbox(f"{m}  (~{info['size']}{', images' if info['images'] else ''})",
-                                    value=m in s["host_models"],
-                                    on_change=lambda e, m=m: toggle_host_model(m, e.value))
-            with ui.row().classes("w-full items-center"):
-                ui.label("Server window").classes("idle-caption")
-                ui.space()
-                host_earned = ui.label().classes("text-sm")
-            host_feed = LogFeed(bridge.host, "h-96")
-
         # ================================================================ GRID
         with ui.tab_panel(t_net).classes("gap-4"):
-            with ui.card().classes("idle-card w-full"):
-                ui.label("Grid name").classes("idle-caption")
-                with ui.row().classes("w-full items-center no-wrap"):
-                    room_input = ui.input(value=s["room"], placeholder="general",
-                                          on_change=lambda e: save("room", e.value.strip() or "general")
-                                          ).classes("grow").props("outlined dense")
-                    ui.button("New private grid", on_click=lambda: room_input.set_value(new_room_name())
-                              ).props("outline no-caps")
-                ui.label("Every device on the same grid name can share its AI. 'general' is open to all; "
-                         "make a private grid for just your team.").classes("text-xs opacity-60")
+            with ui.row().classes("w-full items-center gap-2"):
+                ui.label("Your grid:").classes("idle-caption")
+                grid_label = ui.label().classes("idle-title text-lg")
+                ui.label("(change it in Settings)").classes("text-xs opacity-60")
             with ui.row().classes("w-full gap-4 items-stretch no-wrap"):
                 with ui.card().classes("idle-card w-1/2"):
                     ui.label("Devices on your grid").classes("idle-caption")
@@ -268,11 +254,7 @@ def index() -> None:
             with ui.row().classes("w-full gap-4 items-stretch no-wrap"):
                 with ui.card().classes("idle-card w-1/2 gap-2"):
                     ui.label("Your device").classes("idle-caption")
-                    locations = {"": "Not set"} | {
-                        code: f"{code} - {info['name']} ({info['g_co2_per_kwh']} g CO2/kWh)"
-                        for code, info in carbon.provinces().items()}
-                    ui.select(locations, value=s["location"] or "", label="Where this device is",
-                              on_change=lambda e: save("location", e.value or "")).classes("w-full").props("outlined dense")
+                    co2_where = ui.label().classes("text-sm")
                     co2_rate = ui.label().classes(f"idle-title text-4xl text-[{NAVY}] mt-2")
                     co2_rate_note = ui.label().classes("text-sm opacity-70")
                     co2_status = ui.label().classes("idle-pill text-xs self-start")
@@ -291,6 +273,49 @@ def index() -> None:
                     with ui.column().classes("gap-0"):
                         co2_prompts = ui.label().classes("idle-title text-2xl")
                         co2_prompts_note = ui.label().classes("text-xs opacity-60")
+
+        # ================================================================ SETTINGS
+        with ui.tab_panel(t_set).classes("gap-4"):
+            with ui.card().classes("idle-card w-full gap-3"):
+                ui.label("Settings").classes("idle-title text-xl")
+                ui.label("Changes are saved right away. If you're hosting, hosting restarts by itself to use them."
+                         ).classes("text-xs opacity-60")
+                with ui.row().classes("w-full gap-6 items-start no-wrap"):
+                    with ui.column().classes("w-1/2 gap-1"):
+                        ui.label("Your name").classes("idle-caption")
+                        ui.input(value=s["host_name"], placeholder="e.g. Jonah's laptop",
+                                 on_change=lambda e: changed("host_name", e.value.strip())
+                                 ).classes("w-full").props("outlined dense")
+                        ui.label("Shown to other devices on your grid.").classes("text-xs opacity-60")
+                    with ui.column().classes("w-1/2 gap-1"):
+                        ui.label("Device location").classes("idle-caption")
+                        locations = {"": "Not set"} | {
+                            code: f"{code} - {info['name']} ({info['g_co2_per_kwh']} g CO2/kWh)"
+                            for code, info in carbon.provinces().items()}
+                        ui.select(locations, value=s["location"] or "",
+                                  on_change=lambda e: changed("location", e.value or "")).classes("w-full").props("outlined dense")
+                        ui.label("Sample data for now. Prompts go to the lowest-carbon electricity first.").classes("text-xs opacity-60")
+                ui.label("Grid name").classes("idle-caption mt-2")
+                with ui.row().classes("w-full items-start no-wrap gap-2"):
+                    grid_input = ui.input(value=s["room"], placeholder="general",
+                                          validation={"3-64 letters, numbers or dashes":
+                                                      lambda v: bool(ROOM_PATTERN.match(normalize_room(v or "general")))}
+                                          ).classes("grow").props("outlined dense")
+                    grid_input.on("keydown.enter", lambda: apply_grid())
+                    grid_input.on("blur", lambda: apply_grid())
+                    ui.button("Use this grid", on_click=lambda: apply_grid()).props("unelevated no-caps color=dark")
+                    ui.button("New private grid", on_click=lambda: (grid_input.set_value(new_room_name()), apply_grid())
+                              ).props("outline no-caps")
+                ui.label("Every device on the same grid name can share its AI. 'general' is open to all; make a "
+                         "private grid for just your team (share the name privately).").classes("text-xs opacity-60")
+                ui.label("Models to download and share").classes("idle-caption mt-2")
+                with ui.row().classes("gap-6"):
+                    for m, info in MODELS.items():
+                        ui.checkbox(f"{m}  (~{info['size']}{', images' if info['images'] else ''})",
+                                    value=m in s["host_models"],
+                                    on_change=lambda e, m=m: toggle_host_model(m, e.value))
+                ui.label("You choose what this device downloads. The person asking chooses which model runs "
+                         "(missing ones download automatically).").classes("text-xs opacity-60")
 
         # ================================================================ CHAT HISTORY
         with ui.tab_panel(t_hist).classes("gap-4"):
@@ -439,7 +464,35 @@ def index() -> None:
 
     def toggle_host_model(model: str, on: bool) -> None:
         current = [m for m in setting("host_models") if m != model]
-        save("host_models", current + [model] if on else current)
+        changed("host_models", current + [model] if on else current)
+
+    pending = {"timer": None}
+
+    def changed(key: str, value) -> None:
+        """Save a setting; if hosting, restart it shortly after (so typing doesn't restart it per key)."""
+        save(key, value)
+        if pending["timer"]:
+            pending["timer"].cancel()
+        pending["timer"] = ui.timer(1.5, restart_hosting_if_running, once=True)
+
+    def restart_hosting_if_running() -> None:
+        pending["timer"] = None
+        if bridge.host.running:
+            bridge.host.stop()
+            bridge.host.wait(5)
+            host_feed.reset()
+            bridge.host.start(bridge.host_command(load_settings()))
+            ui.notify(f"Hosting restarted on grid '{setting('room')}'")
+
+    def apply_grid() -> None:
+        name = normalize_room(grid_input.value or "") or "general"
+        if not ROOM_PATTERN.match(name):
+            ui.notify("Grid names are 3-64 letters, numbers or dashes", type="warning")
+            return
+        grid_input.set_value(name)
+        if name != setting("room"):
+            changed("room", name)
+            ui.notify(f"Now on grid '{name}'")
 
     async def find_devices() -> None:
         n = ui.notification("Looking for devices…", spinner=True, timeout=None)
@@ -554,6 +607,11 @@ def index() -> None:
                 finish_turn(turn)
         # host
         host_running = state["hosting"]["running"]
+        server_state.set_text("● Hosting" if host_running else "○ Not hosting")
+        grid_label.set_text(state["settings"]["room"])
+        loc = state["settings"]["location"]
+        co2_where.set_text(f"Location: {carbon.label(loc)} (change it in Settings)" if loc else
+                           "Location not set: set it in Settings")
         host_button.set_text("Stop hosting" if host_running else "Start hosting")
         host_button.props(f"color={'negative' if host_running else 'dark'} icon={'stop' if host_running else 'play_arrow'}")
         host_earned.set_text(f"earned this session: {c['earned']:.2f} credits")

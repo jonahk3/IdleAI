@@ -10,6 +10,7 @@ Type a message and press Enter. Commands:
 """
 import argparse
 import json
+import socket
 import urllib.error
 import urllib.request
 
@@ -51,7 +52,8 @@ class PeerClient:
 
     def chat(self, model: str, messages: list[dict]):
         """Yield the reply piece by piece. The last item is a dict with stats."""
-        payload = json.dumps({"model": model, "messages": messages}).encode()
+        # "asker" is just this device's name, so the other device's server window can say who asked
+        payload = json.dumps({"model": model, "messages": messages, "asker": socket.gethostname()}).encode()
         req = urllib.request.Request(
             f"{self.base}/chat", data=payload, headers={"Content-Type": "application/json"}
         )

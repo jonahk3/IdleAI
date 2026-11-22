@@ -23,6 +23,7 @@ DEFAULTS = {
 
 def load_settings() -> dict:
     settings = dict(DEFAULTS)
+    saved: dict = {}
     try:
         saved = json.loads(Path(SETTINGS_FILE).read_text())
         settings.update({k: v for k, v in saved.items() if k in DEFAULTS})
@@ -33,11 +34,12 @@ def load_settings() -> dict:
     if settings["model"] not in MODELS:  # e.g. a model that was removed from the list
         settings["model"] = DEFAULT_MODEL
     settings["host_models"] = [m for m in settings.get("host_models") or [] if m in MODELS]
-    if not settings["room"] or settings["room"] == DEFAULT_GRID:  # the one the terminal tools saved
+    if "room" not in saved:  # never chosen in a window yet: use the one the terminal tools saved
         try:
             settings["room"] = Path(ROOM_FILE).read_text().strip() or DEFAULT_GRID
         except OSError:
             settings["room"] = DEFAULT_GRID
+    settings["room"] = settings["room"] or DEFAULT_GRID
     return settings
 
 

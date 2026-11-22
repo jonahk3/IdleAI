@@ -198,11 +198,13 @@ class PeerHandler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": str(e)})
             return
 
-        who = self.client_address[0]
+        ip = self.client_address[0]
+        asker = str(body.get("asker") or "")[:40].strip()  # the asking device's name, if it sent one
+        who = f"{asker} ({ip})" if asker else ip
         preview = messages[-1]["content"][:60].replace("\n", " ")
         pics = len(messages[-1].get("images", []))
         # The model is always the one the asking device chose; the host only decides what's downloaded.
-        log(f"{who} asked for [model] {model}: \"{preview}\"" + (f" (+{pics} image(s))" if pics else ""))
+        log(f"→ New task from {who}, asked for [model] {model}: \"{preview}\"" + (f" (+{pics} image(s))" if pics else ""))
 
         # Reply is streamed back as one JSON object per line.
         self.send_response(200)
@@ -225,6 +227,7 @@ class PeerHandler(BaseHTTPRequestHandler):
             if usage.pop("cut_off", False):
                 log(f"{who}: the model started repeating itself, so its answer was cut off there")
             log(f"{who} <- reply done ({chars} chars, {secs}s)")
+            log(f"✓ Task complete: answer sent back to {who} ({secs}s, {model})")
             log(credits.line("earned", earned, f"{detail} for {who}"))
         except (BrokenPipeError, ConnectionResetError):
             log(f"{who} disconnected mid-reply")

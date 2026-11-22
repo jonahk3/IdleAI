@@ -37,14 +37,17 @@ It runs exactly the same commands as the simple window, so everything in this RE
 
 - **Ask**: a chat. Pick the helpers' model, type a message (Ctrl+Enter sends), and add files
   with the 📎 button. Idle splits the prompt across the devices on your grid automatically
-  (cleanest grids first) and replies with the final answer. *Details* under each reply shows
-  which devices and models did the work, and the full log.
-- **Host**: your name, the models to download and share, **Start hosting**, and the server log.
-- **Grid**: your grid name (`general` by default), extra IPs, *Find devices*, and *Check a device* (explains why one can't be reached).
-- **Your CO2 use**: where this device is (its electricity's g CO2/kWh), how much CO2 it emits
-  per hour while running a model, how that compares with the cleanest and dirtiest provinces, and
-  this session's totals (this device's AI work, and your prompts across every device).
+  (lowest-carbon electricity first) and replies with the final answer. *Details* under each reply
+  shows which devices and models did the work, and the full log.
+  **Start hosting** shares this device's AI with your grid; **Server window** pops out its log,
+  which shows each task as it arrives and when it's finished and sent back.
+- **Grid**: the devices on your grid, extra IPs, *Find devices*, and *Check a device*.
+- **Your CO2 use**: how much CO2 this device emits per hour while running a model (from its
+  location), how that compares with the cleanest and dirtiest provinces, and this session's totals.
 - **Chat history**: every past prompt and its answer.
+- **Settings**: your name, grid name (`general` by default; *New private grid* makes one for your
+  team), device location, and the models to download and share. If you're hosting, hosting
+  restarts by itself to use new settings.
 - The header shows your **credits** (this session), whether you're hosting, and whether Ollama runs.
 
 ## Simple window (no install)

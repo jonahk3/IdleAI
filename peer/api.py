@@ -189,7 +189,7 @@ class Bridge:
                 self.earned += float(m.group(2))
             else:
                 self.spent += float(m.group(2))
-        if "asked for [model]" in line:                                   # hosting: a request came in
+        if "New task from" in line:                                       # hosting: a request came in
             self.work["serving"] = True
         if m := re.search(r"<- reply done \(\d+ chars, ([\d.]+)s\)", line):  # hosting: answered it
             self.work["hosting_seconds"] += float(m.group(1))
