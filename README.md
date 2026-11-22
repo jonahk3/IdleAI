@@ -78,6 +78,22 @@ download fails. The list lives in `peer/config.py` (`MODELS`).
   use what the helpers wrote.
 - Answers are still text only.
 
+## Carbon-aware routing
+
+Every laptop picks its **location** (GUI: *Location* in the settings; terminal: `--location QC`
+for both `peer.server` and `peer.split`). Locations are fake for now; the grid carbon intensity
+of each province/territory is in `peer/provinces.json` (approximate, from Canada's National
+Inventory Report). Replace it with live data later by changing only `peer/carbon.py`.
+
+After the plan is ready, **code (not the AI) decides where the parts go**: all available laptops,
+yours included, are ranked by g CO2/kWh and the cleanest ones get the parts. Even a task that
+isn't split (1 part) is sent to a helper if that helper's grid is cleaner than yours; on a tie
+your laptop keeps it (it's free). A laptop with no location is used last.
+
+`[carbon]` lines (teal in the GUI) show the ranking, where each part went, and a rough CO2
+estimate (laptop power x time x grid intensity, `LAPTOP_WATTS` in `peer/config.py`) compared
+with sending everything to the dirtiest available laptop.
+
 ## Credits
 
 A simple tracker for now (later it will be tied to an account):
@@ -268,6 +284,7 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `peer/split.py` | Splits one prompt into parts, runs them on all laptops at once, then collects and saves the answers |
 | `peer/gui.py` | The window: builds and runs the commands below for you, remembers settings |
 | `peer/attachments.py` | Reads attached files and images and adds them to messages |
+| `peer/carbon.py` + `peer/provinces.json` | Grid CO2 per kWh by province, used to send parts to the cleanest laptops |
 | `peer/credits.py` | How many credits a piece of work costs/earns (tokens, or compute time) |
 | `peer/room.py` | Rooms: posts/reads laptop addresses on ntfy.sh so peers find each other |
 | `peer/discovery.py` | Finds other laptops on the Wi-Fi (UDP broadcast on port 8766) |

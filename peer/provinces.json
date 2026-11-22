@@ -1,0 +1,18 @@
+{
+  "_about": "Approximate average carbon intensity of each province's/territory's electricity grid, in grams of CO2-equivalent per kWh. Rounded ballpark figures based on Canada's National Inventory Report (electricity generation, early 2020s). FAKE LOCATION DATA FOR TESTING: good enough to rank provinces, not for real reporting. Replace with live data (e.g. Electricity Maps) later.",
+  "provinces": {
+    "QC": {"name": "Quebec",                    "g_co2_per_kwh": 2},
+    "MB": {"name": "Manitoba",                  "g_co2_per_kwh": 2},
+    "BC": {"name": "British Columbia",          "g_co2_per_kwh": 12},
+    "NL": {"name": "Newfoundland and Labrador", "g_co2_per_kwh": 20},
+    "ON": {"name": "Ontario",                   "g_co2_per_kwh": 30},
+    "YT": {"name": "Yukon",                     "g_co2_per_kwh": 70},
+    "PE": {"name": "Prince Edward Island",      "g_co2_per_kwh": 100},
+    "NT": {"name": "Northwest Territories",     "g_co2_per_kwh": 190},
+    "NB": {"name": "New Brunswick",             "g_co2_per_kwh": 280},
+    "AB": {"name": "Alberta",                   "g_co2_per_kwh": 470},
+    "SK": {"name": "Saskatchewan",              "g_co2_per_kwh": 620},
+    "NS": {"name": "Nova Scotia",               "g_co2_per_kwh": 670},
+    "NU": {"name": "Nunavut",                   "g_co2_per_kwh": 850}
+  }
+}

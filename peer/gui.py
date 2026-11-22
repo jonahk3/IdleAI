@@ -24,7 +24,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from peer.config import COORDINATOR_MODEL, DEFAULT_MODEL, IMAGE_EXTENSIONS, MODEL_ALLOWLIST, MODELS, RESULTS_DIR, ROOM_FILE
-from peer import attachments
+from peer import attachments, carbon
 from peer.room import new_room_name
 
 SETTINGS_FILE = "gui_settings.json"
@@ -41,6 +41,7 @@ DEFAULTS = {
     "search_wifi": True,
     "ask_fake": False,
     "extra_peers": "",
+    "location": "",             # province code (fake for now), used for carbon-aware routing
     "host_models": [DEFAULT_MODEL],  # models to download and share while hosting
 }
 
@@ -59,6 +60,8 @@ def load_settings() -> dict:
         settings.update({k: v for k, v in saved.items() if k in DEFAULTS})
     except (OSError, ValueError):
         pass
+    if settings.get("location") not in carbon.provinces():
+        settings["location"] = ""
     if settings["model"] not in MODELS:  # e.g. a model that was removed from the list
         settings["model"] = DEFAULT_MODEL
     settings["host_models"] = [m for m in settings.get("host_models") or [] if m in MODELS]
@@ -153,7 +156,7 @@ class IdleApp:
         self.root = root
         self.s = load_settings()
         root.title("Idle: share AI between laptops")
-        root.geometry("840x790")
+        root.geometry("860x820")
         root.minsize(640, 520)
 
         self.v = {k: (tk.BooleanVar(value=v) if isinstance(v, bool) else tk.StringVar(value=v))
@@ -208,6 +211,17 @@ class IdleApp:
         ttk.Button(shared, text="New room", command=self.new_room).grid(row=0, column=2)
         ttk.Label(shared, text="Everyone uses the same room name. Leave it empty to use IPs instead.",
                   foreground="gray").grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        ttk.Label(shared, text="Location:").grid(row=2, column=0, sticky="w", pady=(8, 0))
+        self.location_names = {f"{code} - {info['name']} ({info['g_co2_per_kwh']} g CO2/kWh)": code
+                               for code, info in carbon.provinces().items()}
+        self.location_box = ttk.Combobox(shared, values=list(self.location_names), state="readonly", width=44)
+        self.location_box.grid(row=2, column=1, sticky="w", padx=4, pady=(8, 0))
+        current = next((n for n, c in self.location_names.items() if c == self.get("location")), "")
+        self.location_box.set(current)
+        self.location_box.bind("<<ComboboxSelected>>",
+                               lambda e: self.v["location"].set(self.location_names[self.location_box.get()]))
+        ttk.Label(shared, text="fake for now · parts go to the cleanest grids first",
+                  foreground="gray").grid(row=2, column=2, sticky="w", pady=(8, 0))
         shared.columnconfigure(1, weight=1)
 
     def build_log(self, parent) -> tk.Text:
@@ -219,6 +233,7 @@ class IdleApp:
         text.tag_configure("cmd", foreground="#1a6fd6")
         text.tag_configure("model", foreground="#8a2be2")
         text.tag_configure("credits", foreground="#1b7f3b")
+        text.tag_configure("carbon", foreground="#0b7a8a")
         bar.pack(side="right", fill="y")
         text.pack(side="left", fill="both", expand=True)
         return text
@@ -315,7 +330,7 @@ class IdleApp:
         start = log.index("end-1c linestart")
         log.insert("end", text, tag)
         # Colour every line that says which model ran, and every credits line.
-        for marker, line_tag in (("[model]", "model"), ("[credits]", "credits")):
+        for marker, line_tag in (("[carbon]", "carbon"), ("[model]", "model"), ("[credits]", "credits")):
             index = start
             while True:
                 index = log.search(marker, index, stopindex="end")
@@ -470,6 +485,9 @@ class IdleApp:
     def base(self, module: str) -> list[str]:
         return [sys.executable, "-m", module]
 
+    def location_args(self) -> list[str]:
+        return ["--location", self.get("location")] if self.get("location") else []
+
     def room_args(self) -> list[str]:
         return ["--room", self.get("room")] if self.get("room") else []
 
@@ -486,14 +504,14 @@ class IdleApp:
                                             "--model", self.get("model"), "--prompt", prompt]
             return cmd + (["--file", *self.files] if self.files else [])
         cmd = self.base("peer.split") + [prompt, "--model", self.get("model")]
-        cmd += self.room_args() + self.peer_args()
+        cmd += self.room_args() + self.peer_args() + self.location_args()
         if self.get("ask_fake"):
             cmd.append("--fake")
         return cmd + (["--file", *self.files] if self.files else [])  # --file goes last
 
     def host_command(self) -> list[str]:
         cmd = self.base("peer.server") + ["--name", self.get("host_name") or socket.gethostname()]
-        cmd += self.room_args()
+        cmd += self.room_args() + self.location_args()
         if self.get("host_fake"):
             cmd.append("--fake")
         models = [m for m, var in self.host_model_vars.items() if var.get()]
@@ -552,7 +570,7 @@ class IdleApp:
         for line in self.find_runner.output.splitlines():
             if line.startswith("PEERS_JSON "):
                 peers = json.loads(line[len("PEERS_JSON "):])
-                values = [f"{p['name']} - {p['address']}" for p in peers]
+                values = [f"{p['name']} ({carbon.label(p.get('location'))}) - {p['address']}" for p in peers]
                 self.peer_box.configure(values=values)
                 if values and not self.get("one_peer"):
                     self.v["one_peer"].set(values[0])

@@ -62,3 +62,8 @@ PLANNER_MAX_TOKENS = 800
 # Answering a teammate's request EARNS credits; having a teammate answer yours SPENDS them.
 CREDITS_PER_1000_TOKENS = 1.0   # tokens = what the model read (input) + what it wrote (output)
 CREDITS_PER_MINUTE = 3.0        # used instead when a model doesn't report token counts
+
+# Carbon-aware routing: parts go to the laptops on the cleanest power grids first.
+# Locations are fake for now (each laptop picks one); data is in peer/provinces.json.
+UNKNOWN_G_CO2_PER_KWH = 1000    # a laptop with no location is treated as the dirtiest
+LAPTOP_WATTS = 30               # rough power draw while running a model (for CO2 estimates)

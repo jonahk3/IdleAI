@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from peer import attachments, credits, ollama, prompts
+from peer import attachments, carbon, credits, ollama, prompts
 from peer.attachments import Attachments
 from peer.chat import PeerClient
 from peer.config import (COORDINATOR_MODEL, DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT,
@@ -38,6 +38,7 @@ def log(msg: str) -> None:
 class Device:
     name: str = "?"
     where: str = "?"
+    location: str | None = None   # province code, e.g. "QC" (fake for now)
 
     def run(self, model: str, messages: list[dict]) -> str:
         raise NotImplementedError
@@ -51,7 +52,8 @@ class Device:
 class LocalDevice(Device):
     """This laptop's own Ollama."""
 
-    def __init__(self, fake: bool = False) -> None:
+    def __init__(self, fake: bool = False, location: str | None = None) -> None:
+        self.location = location
         self.name, self.where, self.fake = "this laptop", "localhost", fake
 
     def run(self, model: str, messages: list[dict], json_format: bool | dict = False,
@@ -65,8 +67,8 @@ class LocalDevice(Device):
 class RemoteDevice(Device):
     """Another laptop running `python -m peer.server`."""
 
-    def __init__(self, name: str, ip: str, port: int) -> None:
-        self.name, self.where = name, f"{ip}:{port}"
+    def __init__(self, name: str, ip: str, port: int, location: str | None = None) -> None:
+        self.name, self.where, self.location = name, f"{ip}:{port}", location
         self.client = PeerClient(ip, port)
 
     def run(self, model: str, messages: list[dict]) -> str:
@@ -142,7 +144,7 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
                 status = PeerClient(host, port).request_pull(model)
                 log(f"  skip '{info['name']}' (doesn't have {model} yet; asked it to download: {status})")
             continue
-        devices.append(RemoteDevice(info["name"], host, port))
+        devices.append(RemoteDevice(info["name"], host, port, info.get("location")))
         working.append((host, port))
     if working:
         save_known_peers(working)
@@ -150,6 +152,19 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
         log("No other laptops found. Check that `python -m peer.server` is running on them,")
         log("you're on the same Wi-Fi, and try `--peers <IP>` using the IP their server printed.")
     return devices
+
+
+# ---------------------------------------------------------------- carbon-aware routing
+def choose_cleanest(devices: list[Device], parts: int) -> list[Device]:
+    """The `parts` laptops with the lowest CO2 per kWh. Ties: this laptop first (it's free),
+    then the order they were found."""
+    ranked = sorted(devices, key=lambda d: (carbon.intensity(d.location), not isinstance(d, LocalDevice)))
+    log("  [carbon] cleanest first: " + ", ".join(f"{d.name} {carbon.label(d.location)}" for d in ranked))
+    chosen = ranked[:parts]
+    skipped = ranked[parts:]
+    if skipped:
+        log(f"  [carbon] not needed this time: {', '.join(d.name for d in skipped)}")
+    return chosen
 
 
 # ---------------------------------------------------------------- plan, run, combine
@@ -209,6 +224,8 @@ class PartResult:
     model: str = ""                 # the model that actually answered (reported by the helper)
     credits: float = 0.0            # what this part cost (0 if this laptop did it)
     credit_detail: str = ""
+    location: str | None = None     # where it ran
+    co2_grams: float = 0.0          # rough estimate: laptop power x time x grid intensity
     notes: list[str] = field(default_factory=list)
 
 
@@ -218,7 +235,7 @@ def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice
         {"role": "system", "content": prompts.WORKER_SYSTEM},
         attachments.user_message(instruction, att),  # helpers get the files too: they never see the task
     ]
-    result = PartResult(index, instruction, device.name)
+    result = PartResult(index, instruction, device.name, location=device.location)
     start = time.time()
     try:
         text, result.model, usage = device.run_reported(model, messages)
@@ -227,12 +244,14 @@ def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice
             raise
         log(f"  part {index + 1}: '{device.name}' failed ({e}); redoing it on this laptop")
         result.notes.append(f"'{device.name}' failed: {e}")
-        result.device = fallback.name
+        result.device, result.location = fallback.name, fallback.location
         text, result.model, usage = fallback.run_reported(model, messages)
     result.text = text.strip()
     if usage is not None:
         result.credits, result.credit_detail = credits.credits_for(usage)
     result.seconds = round(time.time() - start, 1)
+    work_seconds = (usage or {}).get("seconds") or result.seconds  # the helper's own timing if it sent one
+    result.co2_grams = carbon.estimate_grams(result.location, work_seconds)
     return result
 
 
@@ -260,6 +279,7 @@ def save(task: str, model: str, workers: list[Device], parts: list[PartResult],
     ]
     for p in parts:
         cost = f", {p.credits:.3f} credits" if p.credit_detail else ""
+        cost += f", {carbon.label(p.location)}, ~{p.co2_grams:.3f} g CO2"
         lines += [f"### Part {p.index + 1} — {p.device}, {p.model} ({p.seconds}s{cost})", "", f"*{p.instruction}*", ""]
         lines += [f"> note: {n}" for n in p.notes] + ([""] if p.notes else [])
         lines += [p.text, ""]
@@ -275,6 +295,8 @@ def main() -> None:
                         help="the model the helpers run for each part")
     parser.add_argument("--coordinator", default=COORDINATOR_MODEL, choices=list(MODELS),
                         help="the model this laptop uses to plan and combine (default: %(default)s)")
+    parser.add_argument("--location", type=str.upper, choices=list(carbon.provinces()),
+                        help="province/territory this laptop is in (fake for now), e.g. QC")
     parser.add_argument("--file", nargs="*", default=[], help="files or images to attach to the prompt")
     parser.add_argument("--peers", nargs="*", default=[], help="extra peer IPs, e.g. 192.168.1.42")
     parser.add_argument("--no-discover", action="store_true", help="only use --peers, don't search the Wi-Fi")
@@ -292,9 +314,10 @@ def main() -> None:
         devices = find_devices(args.model, args.peers, not args.no_discover, True, room)[1:]
         log(f"{len(devices)} other laptop(s) ready:")
         for d in devices:
-            log(f"  - {d.name} ({d.where})")
+            log(f"  - {d.name} ({d.where}) [carbon] {carbon.label(d.location)}")
         # One machine-readable line, used by the GUI to fill its peer list.
-        print("PEERS_JSON " + json.dumps([{"name": d.name, "address": d.where} for d in devices]), flush=True)
+        print("PEERS_JSON " + json.dumps([{"name": d.name, "address": d.where, "location": d.location}
+                                          for d in devices]), flush=True)
         return
     prompt = args.prompt or input("Prompt: ").strip()
     if not prompt:
@@ -310,7 +333,7 @@ def main() -> None:
         return
     if att:
         log(f"Attached: {', '.join(att.summary)}")
-    local = LocalDevice(args.fake)
+    local = LocalDevice(args.fake, args.location)
     if not args.fake and not ollama.ensure_model(args.model, log):  # downloads it if needed
         return
 
@@ -322,9 +345,10 @@ def main() -> None:
     if not args.fake:  # load the model into memory while we look for laptops
         threading.Thread(target=ollama.warm_up, args=(args.model,), daemon=True).start()
     devices = find_devices(args.model, args.peers, not args.no_discover, args.fake, room)
+    devices[0] = local  # this laptop, with its location
     log(f"{len(devices)} device(s) available:")
     for d in devices:
-        log(f"  - {d.name} ({d.where})")
+        log(f"  - {d.name} ({d.where}) [carbon] {carbon.label(d.location)}")
     if len(devices) > 1 and coordinator != args.model and not args.fake:
         if not ollama.ensure_model(coordinator, log):  # downloads it if needed
             log(f"  can't plan without {coordinator}; one laptop will do the whole task")
@@ -338,10 +362,11 @@ def main() -> None:
     plan_start = time.time()
     instructions = plan(local, coordinator, prompt, len(devices), att)
     log(f"  planned {len(instructions)} part(s) in {time.time() - plan_start:.1f}s")
-    # One part: give it to a helper laptop if there is one, so this laptop stays free.
-    workers = devices[:len(instructions)] if len(instructions) > 1 else [devices[-1]]
+    # Carbon-aware routing (decided here in code, not by the planner): the parts go to the
+    # laptops on the cleanest grids. Even a single part leaves this laptop if a cleaner one exists.
+    workers = choose_cleanest(devices, len(instructions))
     for i, (text, d) in enumerate(zip(instructions, workers)):
-        log(f"  part {i + 1} -> {d.name} [model] {args.model}: {text}")
+        log(f"  part {i + 1} -> {d.name} [carbon] {carbon.label(d.location)} [model] {args.model}: {text}")
 
     log("RUN: sending parts out (all at the same time)...")
     parts: list[PartResult] = []
@@ -379,6 +404,11 @@ def main() -> None:
     print("\n" + "=" * 70)
     spent = sum(p.credits for p in parts)
     log(f"Credits for this prompt: {spent:.3f} spent on helpers (work on this laptop is free)")
+    grams = sum(p.co2_grams for p in parts)
+    worst = max(carbon.intensity(d.location) for d in devices)
+    worst_grams = sum(p.co2_grams / max(carbon.intensity(p.location), 1e-9) * worst for p in parts)
+    log(f"[carbon] about {grams:.3f} g CO2 for the parts (estimate); the dirtiest available laptop "
+        f"would have used about {worst_grams:.3f} g")
     log(f"Done in {total_secs}s using {len(workers)} laptop(s). Saved to {path}")
 
 

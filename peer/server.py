@@ -19,7 +19,7 @@ from peer.config import MAX_IMAGE_BYTES, MAX_IMAGES, MODEL_ALLOWLIST, MODELS, PE
 from peer.discovery import local_ip, start_responder
 from peer.ollama import chat_stream, installed_models, pull, supports_images, warm_up
 from peer.room import resolve_room, start_announcer
-from peer import credits
+from peer import carbon, credits
 
 ALLOWED_ROLES = {"system", "user", "assistant"}
 MAX_MESSAGES = 100
@@ -104,6 +104,7 @@ def stream_fake(model: str, messages: list[dict]):
 class PeerHandler(BaseHTTPRequestHandler):
     node_name = "peer"
     fake = False
+    location: str | None = None
 
     # --- helpers -------------------------------------------------------
     def send_json(self, status: int, obj: dict) -> None:
@@ -127,7 +128,7 @@ class PeerHandler(BaseHTTPRequestHandler):
             models = MODEL_ALLOWLIST if self.fake else installed_models()
             log(f"{self.client_address[0]} connected (asked for info)")
             self.send_json(200, {"name": self.node_name, "models": models, "fake": self.fake,
-                                 "downloading": dict(PULLING)})
+                                 "downloading": dict(PULLING), "location": self.location})
         else:
             self.send_json(404, {"error": "not found"})
 
@@ -206,6 +207,8 @@ def main() -> None:
     parser.add_argument("--name", default=socket.gethostname(), help="friendly name shown to peers")
     parser.add_argument("--port", type=int, default=PEER_PORT)
     parser.add_argument("--fake", action="store_true", help="no Ollama: reply with a fake echo model")
+    parser.add_argument("--location", type=str.upper, choices=list(carbon.provinces()),
+                        help="province/territory this laptop is in (fake for now), e.g. QC")
     parser.add_argument("--room", help="room name to post this laptop's address in (remembered)")
     parser.add_argument("--models", nargs="*", default=[],
                         help=f"models to download (if needed) and share: {' '.join(MODEL_ALLOWLIST)}")
@@ -217,6 +220,9 @@ def main() -> None:
 
     PeerHandler.node_name = args.name
     PeerHandler.fake = args.fake
+    PeerHandler.location = args.location
+    log(f"[carbon] Location: {carbon.label(args.location)}"
+        + ("" if args.location else ". Askers will use you last; set one with --location"))
 
     if not args.fake:
         models = installed_models()
