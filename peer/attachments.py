@@ -32,6 +32,13 @@ class Attachments:
         """Same attachments minus the pictures (their names are still listed)."""
         return Attachments(self.texts, [], self.image_names, self.summary)
 
+    def preview(self, chars: int) -> "Attachments":
+        """The planner only needs to know what each file is, not read all of it (that's slow)."""
+        short = [(name, content if len(content) <= chars else
+                  content[:chars] + "\n[... preview only: every helper receives the whole file ...]")
+                 for name, content in self.texts]
+        return Attachments(short, self.images, self.image_names, self.summary)
+
     def names(self) -> list[str]:
         return [name for name, _ in self.texts] + self.image_names
 

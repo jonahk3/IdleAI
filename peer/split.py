@@ -14,6 +14,7 @@ What happens (the prompts for each step live in peer/prompts.py):
 """
 import argparse
 import json
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -23,7 +24,8 @@ from pathlib import Path
 from peer import attachments, ollama, prompts
 from peer.attachments import Attachments
 from peer.chat import PeerClient
-from peer.config import COORDINATOR_MODEL, DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT, PLANNER_MAX_TOKENS, RESULTS_DIR
+from peer.config import (COORDINATOR_MODEL, DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT,
+                         PLANNER_FILE_PREVIEW_CHARS, PLANNER_MAX_TOKENS, RESULTS_DIR)
 from peer.discovery import discover, local_ip
 from peer.room import lookup, resolve_room
 
@@ -156,22 +158,41 @@ def plan(local: LocalDevice, model: str, task: str, available: int, att: Attachm
         return [f"(fake) part {i + 1} of {available} of: {task}" for i in range(available)]
     messages = [
         {"role": "system", "content": prompts.PLANNER_SYSTEM},
-        attachments.user_message(prompts.planner_user(task, available, att.names()), att),
+        attachments.user_message(prompts.planner_user(task, available, att.names()),
+                                 att.preview(PLANNER_FILE_PREVIEW_CHARS)),
     ]
     options = {"temperature": 0, "num_predict": PLANNER_MAX_TOKENS}
     try:
         try:
-            reply = local.run(model, messages, json_format=prompts.PLAN_SCHEMA, options=options)
+            reply = local.run(model, messages, json_format=prompts.plan_schema(available), options=options)
         except RuntimeError:  # older Ollama versions don't support schemas
             reply = local.run(model, messages, json_format=True, options=options)
-        parts = [str(x).strip() for x in json.loads(reply)["parts"] if str(x).strip()]
+        parts = clean_parts(json.loads(reply)["parts"])
     except (ValueError, KeyError, TypeError) as e:
         log(f"  planner gave an unusable answer ({e}); one laptop will do the whole task")
         return [task]
     if not parts:
         return [task]
-    if len(parts) > available:  # more parts than laptops: fold the extras into the last one
-        parts = parts[:available - 1] + [" Also: ".join(parts[available - 1:])]
+    if len(parts) > available:  # more parts than laptops: share them out evenly, in order
+        log(f"  planner wrote {len(parts)} parts for {available} laptop(s); grouping them")
+        size, extra = divmod(len(parts), available)
+        groups, start = [], 0
+        for i in range(available):
+            end = start + size + (1 if i < extra else 0)
+            groups.append(" ".join(parts[start:end]))
+            start = end
+        parts = groups
+    return parts
+
+
+def clean_parts(raw: list) -> list[str]:
+    """Tidy the planner's parts: drop labels like 'Helper 1:', empty parts and duplicates."""
+    parts, seen = [], set()
+    for item in raw:
+        text = re.sub(r"^\s*(helper|part|task)\s*\d+\s*[:.)\-]\s*", "", str(item), flags=re.I).strip()
+        if text and text.lower() not in seen:
+            seen.add(text.lower())
+            parts.append(text)
     return parts
 
 

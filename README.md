@@ -61,9 +61,8 @@ In Host mode, tick the models to download and share up front (`peer.server --mod
 | `lfm3` | text | ~1 GB | tiny and fast |
 | `lfm3-omni` | text + **images** | ~2 GB | |
 | `mimo-v2.6` | text + **images** | ~7 GB | needs ~16 GB RAM |
-| `autotrust-jev` | text | ~11 GB | a *decision* model (choices/ratings), may plan poorly |
 
-These need a recent Ollama (0.40.15 or newer). Update it from <https://ollama.com/download> if a
+The newer models need a recent Ollama. Update it from <https://ollama.com/download> if a
 download fails. The list lives in `peer/config.py` (`MODELS`).
 
 **Attachments** (GUI: *Attach files...*; terminal: `--file a.png notes.txt`):

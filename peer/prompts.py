@@ -8,11 +8,15 @@ How the system runs a prompt:
 """
 
 # ---------------------------------------------------------------- 1. plan
-PLAN_SCHEMA = {
-    "type": "object",
-    "properties": {"parts": {"type": "array", "items": {"type": "string"}}},
-    "required": ["parts"],
-}
+def plan_schema(helpers: int) -> dict:
+    """The JSON the planner must return. maxItems stops it from writing more parts than laptops
+    (Ollama enforces the schema while the model writes, so it can't loop on endless parts)."""
+    return {
+        "type": "object",
+        "properties": {"parts": {"type": "array", "items": {"type": "string"},
+                                 "minItems": 1, "maxItems": helpers}},
+        "required": ["parts"],
+    }
 
 PLANNER_SYSTEM = """You split a task into parts for helper computers.
 
@@ -28,6 +32,8 @@ You do not need to use all devices available. Use as many as parts the task can 
 
 Do not put terms like 'next', 'previous' or other linking terms. Each model needs to be able to complete its tasks independently of any other tasks being run concurrently. For the primes example, do not return 'put the next 6 primes'. 
 
+
+Each string you put in "parts" is sent directly, word for word, to a helper model as its complete instructions. Write each one as an instruction addressed to that helper. Do not label parts ("Helper 1:", "Part 2:") and do not write notes for anyone else. Write at most one part per helper.
 
 IMPORTANT: You are ONLY the planner. Do NOT solve the task or compute any part of the answer, not even partly or to check your plan. The helpers do all of the work.
 Never write answer values (numbers, results, names, facts, translations) in your parts. Only describe what each helper must produce.

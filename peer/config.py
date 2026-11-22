@@ -17,7 +17,6 @@ MODELS = {
     "lfm3":          {"images": False, "size": "1 GB",  "about": "Liquid AI LFM3, tiny and fast"},
     "lfm3-omni":     {"images": True,  "size": "2 GB",  "about": "Liquid AI LFM3 Omni"},
     "mimo-v2.6":     {"images": True,  "size": "7 GB",  "about": "Xiaomi MiMo V2.6 9B, needs ~16 GB RAM"},
-    "autotrust-jev": {"images": False, "size": "11 GB", "about": "AutoTrust JEV 9B decision model (choices/ratings)"},
 }
 
 # Safety: the peer server only runs (and only downloads) models on this list,
@@ -58,3 +57,6 @@ ROOM_ANNOUNCE_EVERY = 60 * 60   # re-post our address at least this often (secon
 # The most tokens the planner may write. A plan is a few short instructions; this stops
 # the planner from spending a long time working out the answer itself.
 PLANNER_MAX_TOKENS = 800
+
+# The planner sees only the first this-many characters of each attached file (helpers get it all).
+PLANNER_FILE_PREVIEW_CHARS = 1500
