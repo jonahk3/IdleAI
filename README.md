@@ -94,6 +94,18 @@ your laptop keeps it (it's free). A laptop with no location is used last.
 estimate (laptop power x time x grid intensity, `LAPTOP_WATTS` in `peer/config.py`) compared
 with sending everything to the dirtiest available laptop.
 
+## Ports
+
+The server normally uses port 8765. If that port is taken when it starts:
+- another peer server is running and answering there: it's left alone and the new server uses the
+  next free port (8770, 8771, ...). You only need one server per laptop.
+- a peer server is stuck there (accepts connections but never answers): it's closed and the new
+  server takes 8765 back. Only processes whose command line contains `peer.server` are closed.
+- another program has it: the new server uses the next free port.
+
+Teammates in your room find the new port automatically; the server window also prints the address
+to type (e.g. `10.0.0.5:8770`).
+
 ## Credits
 
 A simple tracker for now (later it will be tied to an account):
@@ -179,7 +191,9 @@ python3 -m peer.split "Write a beginner's guide to composting"
 What happens (the prompts for each step are in `peer/prompts.py`):
 
 1. **Find** the other laptops (room, remembered laptops, or the Wi-Fi).
-2. **Plan**: *your* laptop's coordinator model (`llama3.2:3b`) writes one complete instruction per helper laptop, each producing a
+2. **Plan**: first *your* laptop's coordinator model (`llama3.2:3b`) counts how many independent
+   pieces the task has (without being told how many laptops exist); code uses that many laptops at
+   most. Then it writes exactly that many complete instructions, one per helper laptop, each producing a
    different piece of the answer (e.g. "all primes from 2 to 29", "all primes from 31 to 71", ...).
    It only uses as many laptops as make sense: a short task gets one.
 3. **Run**: all parts are sent out at once. Helpers only see their own instruction. If a laptop
@@ -257,7 +271,7 @@ You can also test everything on one laptop. Run the server in one terminal and
 | Problem | Fix |
 |---|---|
 | A laptop can't be reached | Run `python -m peer.check <its IP>` (or press **Check laptop** in the GUI). It tests the connection step by step and says what to fix. |
-| `Remote end closed connection without response` | Something on that laptop accepted the connection but hung up. Check its server window for an ERROR, make sure only ONE server runs there (terminal + GUI Host mode count as two), `git pull` and restart it, or start it with `--port 8770` if another program uses 8765. |
+| `Remote end closed connection without response` | Something on that laptop accepted the connection but hung up. Its server now handles a busy port by itself (see *Ports* below); otherwise check its window for an ERROR and run `git pull` there. |
 | `Could not reach http://...` | Is the server running on the other laptop? Are you on the **same Wi-Fi**? Venue Wi-Fi often blocks laptops from seeing each other, so try a **phone hotspot**. Check the firewall prompt (see step 2). |
 | `Models shared: (none ...)` | Ollama isn't running on the server laptop, or the model isn't downloaded yet. Run `ollama pull llama3.2:3b` there. |
 | `model '...' is not allowed` | Only models in `peer/config.py` → `MODEL_ALLOWLIST` can run. |

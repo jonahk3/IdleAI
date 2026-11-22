@@ -21,7 +21,7 @@ from peer.config import MAX_IMAGE_BYTES, MAX_IMAGES, MODEL_ALLOWLIST, MODELS, PE
 from peer.discovery import local_ip, start_responder
 from peer.ollama import chat_stream, installed_models, pull, supports_images, warm_up
 from peer.room import resolve_room, start_announcer
-from peer import carbon, credits
+from peer import carbon, credits, ports
 
 ALLOWED_ROLES = {"system", "user", "assistant"}
 MAX_MESSAGES = 100
@@ -281,6 +281,7 @@ def main() -> None:
             if m not in models:
                 start_pull(m)
 
+    args.port = ports.choose_port(args.port, log)  # handles a port that's already taken
     try:
         server = PeerServer(("0.0.0.0", args.port), PeerHandler)
     except OSError as e:
@@ -295,7 +296,8 @@ def main() -> None:
         start_announcer(room, args.name, args.port)
     else:
         log("No room set, so teammates need your IP. (Make one with: python -m peer.room)")
-    log(f"Tell your teammate to run:  python -m peer.chat --peer {local_ip()}")
+    address = local_ip() if args.port == PEER_PORT else f"{local_ip()}:{args.port}"
+    log(f"Tell your teammate to run:  python -m peer.chat --peer {address}")
     log("Press Ctrl+C to stop.")
     try:
         server.serve_forever()

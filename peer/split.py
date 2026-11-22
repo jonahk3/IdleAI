@@ -175,15 +175,26 @@ def plan(local: LocalDevice, model: str, task: str, available: int, att: Attachm
         return [task]
     if local.fake:
         return [f"(fake) part {i + 1} of {available} of: {task}" for i in range(available)]
+    # Step 1: how many independent pieces does the task really have? (Asked without mentioning
+    # the laptops, so the model isn't tempted to use them all.) Code decides the number of parts.
+    pieces = count_pieces(local, model, task, att)
+    wanted = min(pieces, available) if pieces else 1  # can't tell: don't split
+    if pieces:
+        log(f"  the task has {pieces} independent piece(s) -> {wanted} part(s)"
+            + (f" (only {available} laptop(s) available)" if pieces > available else ""))
+    if wanted == 1:
+        return [task]  # nothing to split: the whole task goes to the cleanest laptop
+    # Step 2: write exactly that many parts.
     messages = [
         {"role": "system", "content": prompts.PLANNER_SYSTEM},
         # The planner gets the files' names, types and lengths only, never their contents.
-        {"role": "user", "content": prompts.planner_user(task, available, att.summary)},
+        {"role": "user", "content": prompts.planner_user(task, wanted, att.summary)},
     ]
     options = {"temperature": 0, "num_predict": PLANNER_MAX_TOKENS}
+    available = wanted  # from here on, never more parts than that
     try:
         try:
-            reply = local.run(model, messages, json_format=prompts.plan_schema(available), options=options)
+            reply = local.run(model, messages, json_format=prompts.plan_schema(wanted), options=options)
         except RuntimeError:  # older Ollama versions don't support schemas
             reply = local.run(model, messages, json_format=True, options=options)
         parts = clean_parts(json.loads(reply)["parts"])
@@ -202,6 +213,24 @@ def plan(local: LocalDevice, model: str, task: str, available: int, att: Attachm
             start = end
         parts = groups
     return parts
+
+
+def count_pieces(local: LocalDevice, model: str, task: str, att: Attachments) -> int | None:
+    """Ask how many independent pieces of work the task has (None if the answer is unusable)."""
+    messages = [
+        {"role": "system", "content": prompts.COUNT_SYSTEM},
+        {"role": "user", "content": prompts.count_user(task, att.summary)},
+    ]
+    options = {"temperature": 0, "num_predict": 30}
+    try:
+        try:
+            reply = local.run(model, messages, json_format=prompts.COUNT_SCHEMA, options=options)
+        except RuntimeError:
+            reply = local.run(model, messages, json_format=True, options=options)
+        return max(1, int(json.loads(reply)["pieces"]))
+    except (ValueError, KeyError, TypeError) as e:
+        log(f"  couldn't count the pieces ({e}); one laptop will do the whole task")
+        return None
 
 
 def clean_parts(raw: list) -> list[str]:

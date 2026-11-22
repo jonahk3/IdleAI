@@ -7,14 +7,48 @@ How the system runs a prompt:
   3. COMBINE: this laptop's model turns the helpers' answers into one final answer.
 """
 
+# ---------------------------------------------------------------- 0. count
+# Asked BEFORE planning, and never told how many laptops exist (small models tend to use
+# every helper they hear about). Code then uses min(pieces, laptops) parts.
+COUNT_SCHEMA = {
+    "type": "object",
+    "properties": {"pieces": {"type": "integer", "minimum": 1}},
+    "required": ["pieces"],
+}
+
+COUNT_SYSTEM = """You look at a task and count how many INDEPENDENT pieces of work it contains, so the work can be shared out.
+- A piece is independent if it can be done completely on its own, without the result of any other piece.
+- A single question, a single calculation, or one short answer is 1 piece. Never count steps, checks, or explanations of the same question as separate pieces.
+- Several separate questions or requests in one prompt: 1 piece each.
+- Separate files to process (e.g. "rate these two resumes"): 1 piece per file.
+- A long list of items (e.g. "the first 30 prime numbers", "translate these 40 sentences"): about 10 items per piece.
+- Only count real work. If the whole answer would be a few lines, it is 1 piece.
+
+Examples:
+"What is 17 times 23?" -> {"pieces": 1}
+"Write a haiku about rain" -> {"pieces": 1}
+"What is the square root of 25, and what is the capital of France?" -> {"pieces": 2}
+"Rate Resume.pdf and Other.pdf out of 10" -> {"pieces": 2}
+"List the first 30 prime numbers" -> {"pieces": 3}
+
+Do not solve the task. Reply with JSON only: {"pieces": <number>}"""
+
+
+def count_user(task: str, attached: list[str] | None = None) -> str:
+    text = f"Task: {task}"
+    if attached:
+        text += "\n\nAttached files: " + ", ".join(attached)
+    return text
+
+
 # ---------------------------------------------------------------- 1. plan
-def plan_schema(helpers: int) -> dict:
-    """The JSON the planner must return. maxItems stops it from writing more parts than laptops
-    (Ollama enforces the schema while the model writes, so it can't loop on endless parts)."""
+def plan_schema(parts: int) -> dict:
+    """The JSON the planner must return: exactly `parts` parts (Ollama enforces the schema while
+    the model writes, so it can't write more, or loop on endless parts)."""
     return {
         "type": "object",
         "properties": {"parts": {"type": "array", "items": {"type": "string"},
-                                 "minItems": 1, "maxItems": helpers}},
+                                 "minItems": parts, "maxItems": parts}},
         "required": ["parts"],
     }
 
@@ -43,10 +77,11 @@ Keep each part short: one or two sentences.
 Reply with JSON only: {"parts": ["...", "..."]}"""
 
 
-def planner_user(task: str, helpers: int, attached: list[str] | None = None) -> str:
+def planner_user(task: str, parts: int, attached: list[str] | None = None) -> str:
+    # `parts` was decided in code from the count step: as many as needed, never more than laptops.
     text = (f"Task: {task}\n\n"
-            f"There are {helpers} helpers available. Use as many or as few of them as the task needs "
-            f"(at most {helpers}): one part per independent piece, and just 1 part if the task can't be split.")
+            f"Split it into exactly {parts} independent parts, using only as many helpers as needed "
+            f"({parts}). Make the parts about the same amount of work.")
     text += "\n\nRemember: only plan the parts. Do not work out any of the answer yourself."
     if attached:
         text += ("\n\nThe user attached these files:\n" + "\n".join(f"- {f}" for f in attached)
