@@ -28,6 +28,19 @@ class Attachments:
     def __bool__(self) -> bool:
         return bool(self.texts or self.images)
 
+    def only_named_in(self, instruction: str) -> "Attachments":
+        """Just the files an instruction mentions by name (all of them if it names none).
+
+        Each helper then reads only what it needs: faster, cheaper, and it fits in the model's memory.
+        """
+        text = instruction.lower()
+        texts = [(n, c) for n, c in self.texts if n.lower() in text]
+        pairs = [(n, i) for n, i in zip(self.image_names, self.images) if n.lower() in text]
+        if not texts and not pairs:
+            return self
+        return Attachments(texts, [i for _, i in pairs], [n for n, _ in pairs],
+                           [s for s in self.summary if any(s.startswith(n) for n, _ in texts + pairs)])
+
     def names(self) -> list[str]:
         return [name for name, _ in self.texts] + self.image_names
 

@@ -4,7 +4,7 @@ import re
 import urllib.error
 import urllib.request
 
-from peer.config import ANSWER_OPTIONS, MODEL_ALLOWLIST, MODELS, OLLAMA_TIMEOUT, OLLAMA_URL
+from peer.config import ANSWER_OPTIONS, MAX_CONTEXT, MODEL_ALLOWLIST, MODELS, OLLAMA_TIMEOUT, OLLAMA_URL
 
 # Keep the model in memory this long after each request. (Ollama's default is 5 minutes,
 # after which the next request must reload the model first, which takes seconds.)
@@ -99,6 +99,23 @@ def ensure_model(model: str, log) -> bool:
     return True
 
 
+def needed_tokens(messages: list[dict], num_predict: int | None = None) -> int:
+    """Rough number of tokens for the prompt (about 3 characters each, ~800 per image) plus the answer."""
+    chars = sum(len(m.get("content") or "") for m in messages)
+    images = sum(len(m.get("images") or []) for m in messages)
+    return chars // 3 + images * 800 + (num_predict or 1024) + 512
+
+
+def context_size(messages: list[dict], num_predict: int | None) -> int:
+    """Room for the whole prompt plus the answer (Ollama silently drops whatever doesn't fit).
+
+    About 3 characters per token (a safe guess), ~800 tokens per image, plus the answer and a margin,
+    rounded up to a multiple of 2,048; at least 4,096 and at most MAX_CONTEXT.
+    """
+    size = -(-needed_tokens(messages, num_predict) // 2048) * 2048
+    return max(4096, min(MAX_CONTEXT, size))
+
+
 def chat_stream(model: str, messages: list[dict], json_format: bool | dict = False,
                 options: dict | None = None, usage: dict | None = None):
     """Yield pieces of the reply as Ollama generates them.
@@ -117,6 +134,7 @@ def chat_stream(model: str, messages: list[dict], json_format: bool | dict = Fal
         body["options"] = dict(options or {})  # JSON is shaped by the schema; no repeat penalty
     else:
         body["options"] = {**ANSWER_OPTIONS, **(options or {})}  # stop loops and endless answers
+    body["options"].setdefault("num_ctx", context_size(messages, body["options"].get("num_predict")))
     req = urllib.request.Request(
         f"{OLLAMA_URL}/api/chat",
         data=json.dumps(body).encode(),

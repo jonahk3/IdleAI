@@ -285,6 +285,7 @@ Run the server in one terminal and `python3 -m peer.chat --peer localhost` in an
 
 | Problem | Fix |
 |---|---|
+| An answer says it only saw part of a file | The model's reading window (its *context*) was too small, so Ollama cut the start off. Idle now sizes it for each request (up to `MAX_CONTEXT` in `peer/config.py`, 32,768 tokens) and sends each helper only the files its part names. Very long files still won't fit: the log warns you. |
 | `token repeat limit reached` in a server window | The model got stuck repeating itself and Ollama stopped it. Idle now keeps the answer up to that point (the repeated part is removed), and every answer is sent with a repeat penalty and a length limit (`ANSWER_OPTIONS` in `peer/config.py`). |
 | The chat sits on "Merging responses…" | This device is writing the final answer; the timer shows it's still working. It's capped at `COMBINE_MAX_TOKENS`, and if merging fails you get the helpers' answers one after another. |
 | A device can't be reached | Run `python -m peer.check <its IP>` (or press **Check device** in the GUI). It tests the connection step by step and says what to fix. |

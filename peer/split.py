@@ -24,7 +24,7 @@ from pathlib import Path
 from peer import attachments, carbon, credits, ollama, prompts
 from peer.attachments import Attachments
 from peer.chat import PeerClient
-from peer.config import (COMBINE_MAX_TOKENS, COORDINATOR_MODEL, DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT,
+from peer.config import (COMBINE_MAX_TOKENS, COORDINATOR_MODEL, MAX_CONTEXT, DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT,
                          PLANNER_MAX_TOKENS, RESULTS_DIR)
 from peer.discovery import discover, local_ip
 from peer.room import lookup, resolve_room
@@ -263,8 +263,13 @@ def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice
              att: Attachments) -> PartResult:
     messages = [
         {"role": "system", "content": prompts.WORKER_SYSTEM},
-        attachments.user_message(instruction, att),  # helpers get the files too: they never see the task
+        # helpers get the files they're told to work on (or all of them): they never see the task
+        attachments.user_message(instruction, att.only_named_in(instruction)),
     ]
+    if ollama.needed_tokens(messages) > MAX_CONTEXT:
+        log(f"  WARNING: part {index + 1} is too long for the model to read in full (about "
+            f"{ollama.needed_tokens(messages):,} tokens, max {MAX_CONTEXT:,}); the start of it will be cut off. "
+            "Attach smaller files, or split them into several.")
     result = PartResult(index, instruction, device.name, location=device.location)
     start = time.time()
     try:
