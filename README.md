@@ -19,7 +19,33 @@ Both laptops can run **both** pieces at the same time, so each can use the other
 
 ---
 
-## Easiest: use the window (GUI)
+## The Idle app (recommended)
+
+A modern window in your browser, in the Idle colours, for everything below: asking, hosting,
+rooms, locations, finding/checking laptops, attachments, results, credits and CO2.
+
+```bash
+python3 -m pip install nicegui
+```
+```bash
+python3 -m peer.app
+```
+
+It opens http://localhost:8080 (only your laptop can reach it). Keep the terminal open while you
+use it; closing it also stops hosting. Like the simple window below, it runs exactly the same
+commands, so everything in this README applies.
+
+- **Ask**: pick the helpers' model, *Split across laptops* or *Just one laptop*, drop in files,
+  type a prompt and press **Send** (Ctrl+Enter). The run view shows each step (plan, parts,
+  combine) with the laptop, the model, and the laptop's grid (g CO2/kWh), then the answer and
+  the CO2 estimate. *Show log* has the full output.
+- **Host**: your name, the models to download and share, **Start hosting**, and the server log.
+- **Network**: room, your location, the grid-intensity chart, extra IPs, *Find laptops*, and
+  *Check a laptop* (explains why one can't be reached).
+- **Results**: every saved answer.
+- The header shows your **credits** (this session), whether you're hosting, and whether Ollama runs.
+
+## Simple window (no install)
 
 ```bash
 python3 -m peer.gui
@@ -298,6 +324,10 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `peer/chat.py` | Interactive chat client you run to talk to another laptop |
 | `peer/prompts.py` | Every instruction given to the models (plan, helper, rewrite, check), in one place to tune |
 | `peer/split.py` | Splits one prompt into parts, runs them on all laptops at once, then collects and saves the answers |
+| `peer/app.py` | The Idle app (NiceGUI): modern browser window in the Idle colours |
+| `peer/assets/` | Idle logo and icon |
+| `peer/api.py` | The engine behind the Idle app (runs the same commands as the GUI); `python -m peer.api` also serves it as a local web API |
+| `peer/settings.py` | Saved settings shared by the GUI and the bridge |
 | `peer/gui.py` | The window: builds and runs the commands below for you, remembers settings |
 | `peer/attachments.py` | Reads attached files and images and adds them to messages |
 | `peer/carbon.py` + `peer/provinces.json` | Grid CO2 per kWh by province, used to send parts to the cleanest laptops |

@@ -1,3 +1,5 @@
 # Everything else uses only Python's built-in libraries.
+# Optional: the Idle app (python -m peer.app).
+nicegui>=3.0
 # Optional: lets the asking laptop attach PDFs (helpers don't need it).
 pypdf>=4.0

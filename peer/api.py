@@ -262,7 +262,9 @@ class Bridge:
         return {"log": job.output}
 
     def add_file(self, name: str, data_b64: str) -> dict:
-        data = base64.b64decode(data_b64)
+        return self.add_file_bytes(name, base64.b64decode(data_b64))
+
+    def add_file_bytes(self, name: str, data: bytes) -> dict:
         if len(data) > MAX_UPLOAD_BYTES:
             raise ValueError(f"{name} is too big (max {MAX_UPLOAD_BYTES // 1_000_000} MB)")
         file_id = uuid.uuid4().hex[:12]
@@ -278,6 +280,28 @@ class Bridge:
             entry["error"] = str(e)
         self.files[file_id] = entry
         return entry
+
+    def start_ask(self, prompt: str) -> None:
+        """Start a prompt with the saved settings. Raises ValueError with a friendly message."""
+        prompt = prompt.strip()
+        if not prompt:
+            raise ValueError("Type a prompt first.")
+        if self.ask.running:
+            raise ValueError("Still working on the last prompt. Stop it first.")
+        problems = [f["error"] for f in self.files.values() if f.get("error")]
+        if problems:
+            raise ValueError(problems[0])
+        warning = self.state()["attachment_warning"]
+        if warning:
+            raise ValueError(warning[0].upper() + warning[1:])
+        self.ask.start(self.ask_command(load_settings(), prompt))
+
+    def install_pdf(self) -> dict:
+        job = Job("pip")
+        job.start([sys.executable, "-m", "pip", "install", "pypdf"])
+        job.wait(300)
+        self.recheck_files()
+        return {"ok": job.exit_code == 0, "log": job.output, "pdf_supported": attachments.pdf_supported()}
 
     def remove_file(self, file_id: str) -> None:
         entry = self.files.pop(file_id, None)
@@ -390,18 +414,7 @@ class Handler(BaseHTTPRequestHandler):
             elif method == "GET" and path == "/api/host/log":
                 self.send_json(200, b.host.snapshot(int(params.get("since", 0))))
             elif method == "POST" and path == "/api/ask":
-                prompt = str(self.body().get("prompt", "")).strip()
-                if not prompt:
-                    raise ValueError("Type a prompt first.")
-                if b.ask.running:
-                    raise ValueError("Still working on the last prompt. Stop it first.")
-                problems = [f["error"] for f in b.files.values() if f.get("error")]
-                if problems:
-                    raise ValueError(problems[0])
-                warning = b.state()["attachment_warning"]
-                if warning:
-                    raise ValueError(warning[0].upper() + warning[1:])
-                b.ask.start(b.ask_command(load_settings(), prompt))
+                b.start_ask(str(self.body().get("prompt", "")))
                 self.send_json(200, b.ask_result(0))
             elif method == "GET" and path == "/api/ask/log":
                 self.send_json(200, b.ask_result(int(params.get("since", 0))))
@@ -422,12 +435,7 @@ class Handler(BaseHTTPRequestHandler):
                 b.remove_file(path.rsplit("/", 1)[-1])
                 self.send_json(200, {"attachments": list(b.files.values())})
             elif method == "POST" and path == "/api/pdf/install":
-                job = Job("pip")
-                job.start([sys.executable, "-m", "pip", "install", "pypdf"])
-                job.wait(300)
-                b.recheck_files()
-                self.send_json(200, {"ok": job.exit_code == 0, "log": job.output,
-                                     "pdf_supported": attachments.pdf_supported()})
+                self.send_json(200, b.install_pdf())
             elif method == "GET" and path == "/api/results":
                 folder = PROJECT_DIR / RESULTS_DIR
                 files = sorted(folder.glob("*.md"), reverse=True)[:30] if folder.is_dir() else []
