@@ -4,11 +4,12 @@
 
 What happens (the prompts for each step live in peer/prompts.py):
   1. FIND:    this laptop + every peer server in the room / on the Wi-Fi.
-  2. PLAN:    this laptop's model writes one self-contained instruction per helper
+  2. PLAN:    this laptop's coordinator model (llama3.2:3b) writes one self-contained instruction per helper
               (only as many as make sense; short tasks get one).
   3. RUN:     every instruction goes to a different laptop at the same time. If a
               laptop fails, this laptop redoes its part.
-  4. COMBINE: this laptop's model turns the helpers' answers into one final answer.
+  4. COMBINE: the coordinator model turns the helpers' answers into one final answer.
+  The helpers run the model you pick with --model.
   Everything is shown and saved in results/.
 """
 import argparse
@@ -22,7 +23,7 @@ from pathlib import Path
 from peer import attachments, ollama, prompts
 from peer.attachments import Attachments
 from peer.chat import PeerClient
-from peer.config import DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT, PLANNER_MAX_TOKENS, RESULTS_DIR
+from peer.config import COORDINATOR_MODEL, DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT, PLANNER_MAX_TOKENS, RESULTS_DIR
 from peer.discovery import discover, local_ip
 from peer.room import lookup, resolve_room
 
@@ -225,7 +226,7 @@ def save(task: str, model: str, workers: list[Device], parts: list[PartResult],
     lines = [
         "# Result", "", f"**Prompt:** {task}", "",
         *([f"**Attached:** {', '.join(attached)}", ""] if attached else []),
-        f"**Model:** {model} · **Laptops used:** {', '.join(d.name for d in workers)} · "
+        f"**Helper model:** {model} · **Planned/combined by:** {COORDINATOR_MODEL} · **Laptops used:** {', '.join(d.name for d in workers)} · "
         f"**Total time:** {total_seconds}s", "", "## Final answer", "", final, "", "## Parts", "",
     ]
     for p in parts:
@@ -240,7 +241,10 @@ def save(task: str, model: str, workers: list[Device], parts: list[PartResult],
 def main() -> None:
     parser = argparse.ArgumentParser(description="Split a prompt across laptops on the network.")
     parser.add_argument("prompt", nargs="?", help="what to ask (you'll be asked if you leave it out)")
-    parser.add_argument("--model", default=DEFAULT_MODEL, choices=list(MODELS))
+    parser.add_argument("--model", default=DEFAULT_MODEL, choices=list(MODELS),
+                        help="the model the helpers run for each part")
+    parser.add_argument("--coordinator", default=COORDINATOR_MODEL, choices=list(MODELS),
+                        help="the model this laptop uses to plan and combine (default: %(default)s)")
     parser.add_argument("--file", nargs="*", default=[], help="files or images to attach to the prompt")
     parser.add_argument("--peers", nargs="*", default=[], help="extra peer IPs, e.g. 192.168.1.42")
     parser.add_argument("--no-discover", action="store_true", help="only use --peers, don't search the Wi-Fi")
@@ -280,9 +284,10 @@ def main() -> None:
     if not args.fake and not ollama.ensure_model(args.model, log):  # downloads it if needed
         return
 
-    # The asking laptop picks the model; every laptop uses exactly this one (hosts only choose
-    # which models they download).
-    log(f"[model] You chose {args.model}: it is used for planning, every part and combining")
+    # The asking laptop picks the helpers' model; every helper uses exactly this one (hosts only
+    # choose which models they download). Planning and combining use the coordinator model.
+    coordinator = args.coordinator
+    log(f"[model] You chose {args.model} for the parts. Planning and combining use {coordinator}.")
     t0 = time.time()
     if not args.fake:  # load the model into memory while we look for laptops
         threading.Thread(target=ollama.warm_up, args=(args.model,), daemon=True).start()
@@ -290,12 +295,20 @@ def main() -> None:
     log(f"{len(devices)} device(s) available:")
     for d in devices:
         log(f"  - {d.name} ({d.where})")
+    if len(devices) > 1 and coordinator != args.model and not args.fake:
+        if not ollama.ensure_model(coordinator, log):  # downloads it if needed
+            log(f"  can't plan without {coordinator}; one laptop will do the whole task")
+            devices = devices[:1]
+        else:
+            threading.Thread(target=ollama.warm_up, args=(coordinator,), daemon=True).start()
+    # The coordinator only sees pictures if it can (it still gets the image names).
+    coord_att = att if ollama.supports_images(coordinator) else att.without_images()
 
     log(f"PLAN: this laptop is writing one instruction per helper ({len(devices)} laptop(s) available)...")
     if len(devices) > 1:
-        log(f"  [model] plan on this laptop: {args.model}")
+        log(f"  [model] plan on this laptop: {coordinator}")
     plan_start = time.time()
-    instructions = plan(local, args.model, prompt, len(devices), att)
+    instructions = plan(local, coordinator, prompt, len(devices), coord_att)
     log(f"  planned {len(instructions)} part(s) in {time.time() - plan_start:.1f}s")
     # One part: give it to a helper laptop if there is one, so this laptop stays free.
     workers = devices[:len(instructions)] if len(instructions) > 1 else [devices[-1]]
@@ -317,9 +330,9 @@ def main() -> None:
 
     if len(parts) > 1:
         log("COMBINE: this laptop is writing the final answer from the helpers' answers...")
-        log(f"  [model] combine on this laptop: {args.model}")
+        log(f"  [model] combine on this laptop: {coordinator}")
         combine_start = time.time()
-        final = combine(local, args.model, prompt, parts, att)
+        final = combine(local, coordinator, prompt, parts, coord_att)
         log(f"  combined in {time.time() - combine_start:.1f}s")
     else:
         final = parts[0].text

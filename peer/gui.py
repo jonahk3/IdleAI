@@ -23,7 +23,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from peer.config import DEFAULT_MODEL, IMAGE_EXTENSIONS, MODEL_ALLOWLIST, MODELS, RESULTS_DIR, ROOM_FILE
+from peer.config import COORDINATOR_MODEL, DEFAULT_MODEL, IMAGE_EXTENSIONS, MODEL_ALLOWLIST, MODELS, RESULTS_DIR, ROOM_FILE
 from peer.room import new_room_name
 
 SETTINGS_FILE = "gui_settings.json"
@@ -232,13 +232,14 @@ class IdleApp:
 
         pick = ttk.Frame(f)
         pick.pack(fill="x", pady=(0, 6))
-        ttk.Label(pick, text="Model for your prompt:").pack(side="left")
+        ttk.Label(pick, text="Model for the helpers:").pack(side="left")
         ttk.Combobox(pick, textvariable=self.v["model"], values=MODEL_ALLOWLIST,
                      state="readonly", width=16).pack(side="left", padx=6)
         self.model_info = ttk.Label(pick, text="", foreground="gray")
         self.model_info.pack(side="left")
-        ttk.Label(f, text="Every laptop runs the model you pick here (missing ones download automatically).",
-                  foreground="gray").pack(anchor="w")
+        ttk.Label(f, text=f"Every helper runs the model you pick here. Splitting and combining always use "
+                          f"{COORDINATOR_MODEL} on this laptop. Missing models download automatically.",
+                  foreground="gray", wraplength=800, justify="left").pack(anchor="w")
 
         how = ttk.LabelFrame(f, text="How to send the prompt", padding=8)
         how.pack(fill="x")

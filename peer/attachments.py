@@ -24,6 +24,10 @@ class Attachments:
     def __bool__(self) -> bool:
         return bool(self.texts or self.images)
 
+    def without_images(self) -> "Attachments":
+        """Same attachments minus the pictures (their names are still listed)."""
+        return Attachments(self.texts, [], self.image_names)
+
     def names(self) -> list[str]:
         return [name for name, _ in self.texts] + self.image_names
 

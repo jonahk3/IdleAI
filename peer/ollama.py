@@ -83,6 +83,11 @@ def ensure_model(model: str, log) -> bool:
         if percent is not None and percent >= shown["pct"] + 10:
             shown["pct"] = percent - percent % 10
             log(f"  {model}: {percent}%")
+        elif percent is None and status and status != shown.get("status") and status != "success" \
+                and not status.startswith("pulling"):
+            # e.g. "verifying sha256 digest", "writing manifest": can take a minute after 100%
+            shown["status"] = status
+            log(f"  {model}: {status}...")
     try:
         pull(model, progress)
     except (RuntimeError, ValueError) as e:

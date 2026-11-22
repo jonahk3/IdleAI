@@ -26,6 +26,11 @@ MODEL_ALLOWLIST = list(MODELS)
 
 DEFAULT_MODEL = "llama3.2:3b"
 
+# The "coordinator" model plans (splits the prompt) and combines the answers on the asking
+# laptop, whatever model you pick for the helpers. Small models like lfm3 often return empty
+# or one-part plans, so this stays on llama. Override with peer.split --coordinator NAME.
+COORDINATOR_MODEL = "llama3.2:3b"
+
 # Attachments (files and images you add to a prompt).
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 MAX_FILE_CHARS = 200_000          # longer text files are cut off

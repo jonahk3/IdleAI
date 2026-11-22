@@ -40,8 +40,12 @@ The window just runs the same commands described below; it shows each one in blu
 
 ## Models, images and files
 
-**The person asking picks the model** (GUI: *Model for your prompt*, terminal: `--model NAME`),
-and every laptop runs exactly that model for planning, every part and combining. Hosts only choose
+**The person asking picks the helpers' model** (GUI: *Model for the helpers*, terminal:
+`--model NAME`), and every helper runs exactly that model for its part. **Splitting and combining
+always use `llama3.2:3b`** on the asking laptop (the "coordinator", `COORDINATOR_MODEL` in
+`peer/config.py`, or `--coordinator NAME`), because smaller models often return empty or one-part
+plans. It downloads automatically if missing. Llama can't see images, so attached images go to the
+helpers only; the planner just gets their file names. Hosts only choose
 which models they download; they never decide which one runs. Lines marked `[model]` in the
 output (purple in the GUI, plus a *Models used (debug)* bar) show which model ran each step and
 on which laptop.
@@ -139,12 +143,12 @@ python3 -m peer.split "Write a beginner's guide to composting"
 What happens (the prompts for each step are in `peer/prompts.py`):
 
 1. **Find** the other laptops (room, remembered laptops, or the Wi-Fi).
-2. **Plan**: *your* model writes one complete instruction per helper laptop, each producing a
+2. **Plan**: *your* laptop's coordinator model (`llama3.2:3b`) writes one complete instruction per helper laptop, each producing a
    different piece of the answer (e.g. "all primes from 2 to 29", "all primes from 31 to 71", ...).
    It only uses as many laptops as make sense: a short task gets one.
 3. **Run**: all parts are sent out at once. Helpers only see their own instruction. If a laptop
    dies, yours redoes its part.
-4. **Combine**: *your* model writes the final answer from the helpers' answers (fixing numbering,
+4. **Combine**: the coordinator model writes the final answer from the helpers' answers (fixing numbering,
    duplicates and gaps).
 
 Results are shown and saved to `results/<date-time>.md`.
