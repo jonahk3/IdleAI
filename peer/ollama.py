@@ -24,9 +24,9 @@ def installed_models() -> list[str]:
     try:
         with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=5) as resp:
             data = json.load(resp)
-    except (urllib.error.URLError, OSError):
-        return []
-    names = {canonical(m["name"]) for m in data.get("models", [])}
+        names = {canonical(m["name"]) for m in data.get("models", [])}
+    except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError, AttributeError):
+        return []  # Ollama not running, or something else answered on its port
     return [m for m in MODEL_ALLOWLIST if m in names]
 
 

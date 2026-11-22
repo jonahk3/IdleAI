@@ -135,6 +135,7 @@ def find_devices(model: str, manual_peers: list[str], use_discovery: bool, fake:
     for (host, port), info in zip(candidates, answers):
         if isinstance(info, Exception):
             log(f"  skip {host}:{port} (not reachable: {info})")
+            log(f"    to find out why, run:  python -m peer.check {host}:{port}")
             continue
         if model not in info["models"]:
             if model in info.get("downloading", {}):

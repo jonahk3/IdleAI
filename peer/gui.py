@@ -177,6 +177,7 @@ class IdleApp:
                                  self.ask_finished)
         self.find_runner = Runner(root, lambda t: self.write(self.ask_log, t), self.find_finished)
         self.pip_runner = Runner(root, lambda t: self.write(self.ask_log, t), self.pip_finished)
+        self.check_runner = Runner(root, lambda t: self.write(self.ask_log, t), lambda code: None)
         self.attach_error = ""  # why the current attachments can't be sent (empty = fine)
         self.host_runner = Runner(root, lambda t: self.output_text(self.host_log, self.host_runner, t),
                                   self.host_finished)
@@ -289,8 +290,9 @@ class IdleApp:
         ttk.Label(how, text="Extra IPs:").grid(row=2, column=0, sticky="w", pady=(6, 0))
         ttk.Entry(how, textvariable=self.v["extra_peers"]).grid(
             row=2, column=1, columnspan=2, sticky="we", padx=12, pady=(6, 0))
+        ttk.Button(how, text="Check laptop", command=self.check_peer).grid(row=2, column=3, pady=(6, 0))
         ttk.Checkbutton(how, text="Fake model (testing)",
-                        variable=self.v["ask_fake"]).grid(row=2, column=3, sticky="w", pady=(6, 0))
+                        variable=self.v["ask_fake"]).grid(row=0, column=3, sticky="w")
         how.columnconfigure(2, weight=1)
 
         files = ttk.Frame(f)
@@ -566,6 +568,21 @@ class IdleApp:
         self.write_command(self.ask_log, cmd)
         self.find_runner.start(cmd)
 
+    def check_peer(self) -> None:
+        """Explain why a laptop can't be reached (runs python -m peer.check)."""
+        extra = self.get("extra_peers").replace(",", " ").split()
+        target = self.peer_address() if self.get("send_mode") == "one" and self.peer_address() else \
+            (extra[0] if extra else self.peer_address())
+        if not target:
+            messagebox.showinfo("Check laptop", "Type the laptop's IP in 'Extra IPs' (or pick one under "
+                                "'Just one laptop'), then press Check laptop.")
+            return
+        if self.check_runner.running:
+            return
+        cmd = self.base("peer.check") + [target]
+        self.write_command(self.ask_log, cmd)
+        self.check_runner.start(cmd)
+
     def find_finished(self, code: int) -> None:
         for line in self.find_runner.output.splitlines():
             if line.startswith("PEERS_JSON "):
@@ -598,7 +615,7 @@ class IdleApp:
             self.host_status.configure(text="○ Not hosting", foreground="gray")
 
     def on_close(self) -> None:
-        for r in (self.ask_runner, self.find_runner, self.host_runner, self.pip_runner):
+        for r in (self.ask_runner, self.find_runner, self.host_runner, self.pip_runner, self.check_runner):
             r.stop()
         self.root.destroy()
 

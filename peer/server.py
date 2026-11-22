@@ -10,9 +10,11 @@ treated as plain text data (nothing from the network is ever executed).
 """
 import argparse
 import json
+import os
 import socket
 import threading
 import time
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from peer.config import MAX_IMAGE_BYTES, MAX_IMAGES, MODEL_ALLOWLIST, MODELS, PEER_PORT
@@ -123,12 +125,42 @@ class PeerHandler(BaseHTTPRequestHandler):
         pass
 
     # --- endpoints -----------------------------------------------------
+    # Every request goes through do_GET/do_POST below, which catch any error, print it in this
+    # window and still answer. (Without this, a crash just closes the connection and the other
+    # laptop only sees "Remote end closed connection without response".)
+    def send_response(self, *args, **kwargs) -> None:
+        self._answered = True
+        super().send_response(*args, **kwargs)
+
     def do_GET(self) -> None:
+        self._safely(self._get)
+
+    def do_POST(self) -> None:
+        self._safely(self._post)
+
+    def _safely(self, handler) -> None:
+        self._answered = False
+        try:
+            handler()
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the other laptop went away
+        except Exception as e:
+            log(f"ERROR while answering {self.client_address[0]} ({self.command} {self.path}):")
+            print(traceback.format_exc(), flush=True)
+            if not self._answered:
+                try:
+                    self.send_json(500, {"error": f"server error on {self.node_name}: {e!r}"})
+                except OSError:
+                    pass
+
+    def _get(self) -> None:
         if self.path == "/info":
             models = MODEL_ALLOWLIST if self.fake else installed_models()
+            with PULL_LOCK:  # a download thread may be changing it right now
+                downloading = dict(PULLING)
             log(f"{self.client_address[0]} connected (asked for info)")
             self.send_json(200, {"name": self.node_name, "models": models, "fake": self.fake,
-                                 "downloading": dict(PULLING), "location": self.location})
+                                 "downloading": downloading, "location": self.location})
         else:
             self.send_json(404, {"error": "not found"})
 
@@ -149,7 +181,7 @@ class PeerHandler(BaseHTTPRequestHandler):
         started = start_pull(model)
         self.send_json(200, {"status": "downloading" if started else "already downloading"})
 
-    def do_POST(self) -> None:
+    def _post(self) -> None:
         if self.path == "/pull":
             self.handle_pull()
             return
@@ -202,6 +234,18 @@ class PeerHandler(BaseHTTPRequestHandler):
                 pass
 
 
+class PeerServer(ThreadingHTTPServer):
+    daemon_threads = True
+    # Only one server per port. (On Windows, "reuse address" would let a second server share
+    # the port, and requests could go to the wrong/old one.)
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self) -> None:
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Share this laptop's Ollama with peers on the network.")
     parser.add_argument("--name", default=socket.gethostname(), help="friendly name shown to peers")
@@ -237,7 +281,13 @@ def main() -> None:
             if m not in models:
                 start_pull(m)
 
-    server = ThreadingHTTPServer(("0.0.0.0", args.port), PeerHandler)
+    try:
+        server = PeerServer(("0.0.0.0", args.port), PeerHandler)
+    except OSError as e:
+        log(f"Can't start: port {args.port} is already in use ({e}).")
+        log("  Another peer server (or another program) is already running on this laptop.")
+        log("  Close the other one (check other terminals and the GUI's Host mode), or use --port 8770.")
+        raise SystemExit(1)
     if not start_responder(args.name, args.port):
         log("WARNING: discovery port busy, so peer.split can't auto-find this laptop (use --peers).")
     log(f"Peer '{args.name}' is up.")

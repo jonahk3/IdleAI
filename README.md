@@ -256,6 +256,8 @@ You can also test everything on one laptop. Run the server in one terminal and
 
 | Problem | Fix |
 |---|---|
+| A laptop can't be reached | Run `python -m peer.check <its IP>` (or press **Check laptop** in the GUI). It tests the connection step by step and says what to fix. |
+| `Remote end closed connection without response` | Something on that laptop accepted the connection but hung up. Check its server window for an ERROR, make sure only ONE server runs there (terminal + GUI Host mode count as two), `git pull` and restart it, or start it with `--port 8770` if another program uses 8765. |
 | `Could not reach http://...` | Is the server running on the other laptop? Are you on the **same Wi-Fi**? Venue Wi-Fi often blocks laptops from seeing each other, so try a **phone hotspot**. Check the firewall prompt (see step 2). |
 | `Models shared: (none ...)` | Ollama isn't running on the server laptop, or the model isn't downloaded yet. Run `ollama pull llama3.2:3b` there. |
 | `model '...' is not allowed` | Only models in `peer/config.py` → `MODEL_ALLOWLIST` can run. |
@@ -285,6 +287,7 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `peer/gui.py` | The window: builds and runs the commands below for you, remembers settings |
 | `peer/attachments.py` | Reads attached files and images and adds them to messages |
 | `peer/carbon.py` + `peer/provinces.json` | Grid CO2 per kWh by province, used to send parts to the cleanest laptops |
+| `peer/check.py` | `python -m peer.check IP`: explains why a laptop can't be reached |
 | `peer/credits.py` | How many credits a piece of work costs/earns (tokens, or compute time) |
 | `peer/room.py` | Rooms: posts/reads laptop addresses on ntfy.sh so peers find each other |
 | `peer/discovery.py` | Finds other laptops on the Wi-Fi (UDP broadcast on port 8766) |

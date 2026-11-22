@@ -25,8 +25,17 @@ class PeerClient:
         self.base = f"http://{host}:{port}"
 
     def info(self, timeout: float = 5) -> dict:
-        with urllib.request.urlopen(f"{self.base}/info", timeout=timeout) as resp:
-            return json.load(resp)
+        try:
+            with urllib.request.urlopen(f"{self.base}/info", timeout=timeout) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as e:  # the server answered with an error: show its message
+            try:
+                message = json.load(e).get("error", str(e))
+            except ValueError:
+                message = f"{e} (not a peer server?)"
+            raise OSError(message) from None
+        except ValueError:
+            raise OSError("something answered that isn't a peer server") from None
 
     def request_pull(self, model: str) -> str:
         """Ask the other laptop to download a model. Returns its status message."""
