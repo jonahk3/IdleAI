@@ -1,0 +1,985 @@
+{
+ "_about": "Approximate average carbon intensity of the electricity grid, in grams of CO2-equivalent per kWh: Canadian provinces/territories, US states and national averages for other countries. Rounded ballpark figures for the early 2020s, in line with public sources such as Canada's National Inventory Report, the US EIA and Ember. SAMPLE DATA: good enough to rank places, not for real reporting. Replace with live data (e.g. Electricity Maps) later.",
+ "regions": {
+  "QC": {
+   "name": "Quebec",
+   "country": "Canada",
+   "g_co2_per_kwh": 2
+  },
+  "MB": {
+   "name": "Manitoba",
+   "country": "Canada",
+   "g_co2_per_kwh": 2
+  },
+  "BC": {
+   "name": "British Columbia",
+   "country": "Canada",
+   "g_co2_per_kwh": 12
+  },
+  "NL": {
+   "name": "Newfoundland and Labrador",
+   "country": "Canada",
+   "g_co2_per_kwh": 20
+  },
+  "ON": {
+   "name": "Ontario",
+   "country": "Canada",
+   "g_co2_per_kwh": 30
+  },
+  "YT": {
+   "name": "Yukon",
+   "country": "Canada",
+   "g_co2_per_kwh": 70
+  },
+  "PE": {
+   "name": "Prince Edward Island",
+   "country": "Canada",
+   "g_co2_per_kwh": 100
+  },
+  "NT": {
+   "name": "Northwest Territories",
+   "country": "Canada",
+   "g_co2_per_kwh": 190
+  },
+  "NB": {
+   "name": "New Brunswick",
+   "country": "Canada",
+   "g_co2_per_kwh": 280
+  },
+  "AB": {
+   "name": "Alberta",
+   "country": "Canada",
+   "g_co2_per_kwh": 470
+  },
+  "SK": {
+   "name": "Saskatchewan",
+   "country": "Canada",
+   "g_co2_per_kwh": 620
+  },
+  "NS": {
+   "name": "Nova Scotia",
+   "country": "Canada",
+   "g_co2_per_kwh": 670
+  },
+  "NU": {
+   "name": "Nunavut",
+   "country": "Canada",
+   "g_co2_per_kwh": 850
+  },
+  "US-AL": {
+   "name": "Alabama",
+   "country": "United States",
+   "g_co2_per_kwh": 380
+  },
+  "US-AK": {
+   "name": "Alaska",
+   "country": "United States",
+   "g_co2_per_kwh": 450
+  },
+  "US-AZ": {
+   "name": "Arizona",
+   "country": "United States",
+   "g_co2_per_kwh": 340
+  },
+  "US-AR": {
+   "name": "Arkansas",
+   "country": "United States",
+   "g_co2_per_kwh": 470
+  },
+  "US-CA": {
+   "name": "California",
+   "country": "United States",
+   "g_co2_per_kwh": 200
+  },
+  "US-CO": {
+   "name": "Colorado",
+   "country": "United States",
+   "g_co2_per_kwh": 530
+  },
+  "US-CT": {
+   "name": "Connecticut",
+   "country": "United States",
+   "g_co2_per_kwh": 230
+  },
+  "US-DE": {
+   "name": "Delaware",
+   "country": "United States",
+   "g_co2_per_kwh": 390
+  },
+  "US-DC": {
+   "name": "District of Columbia",
+   "country": "United States",
+   "g_co2_per_kwh": 300
+  },
+  "US-FL": {
+   "name": "Florida",
+   "country": "United States",
+   "g_co2_per_kwh": 390
+  },
+  "US-GA": {
+   "name": "Georgia",
+   "country": "United States",
+   "g_co2_per_kwh": 380
+  },
+  "US-HI": {
+   "name": "Hawaii",
+   "country": "United States",
+   "g_co2_per_kwh": 640
+  },
+  "US-ID": {
+   "name": "Idaho",
+   "country": "United States",
+   "g_co2_per_kwh": 70
+  },
+  "US-IL": {
+   "name": "Illinois",
+   "country": "United States",
+   "g_co2_per_kwh": 290
+  },
+  "US-IN": {
+   "name": "Indiana",
+   "country": "United States",
+   "g_co2_per_kwh": 720
+  },
+  "US-IA": {
+   "name": "Iowa",
+   "country": "United States",
+   "g_co2_per_kwh": 320
+  },
+  "US-KS": {
+   "name": "Kansas",
+   "country": "United States",
+   "g_co2_per_kwh": 340
+  },
+  "US-KY": {
+   "name": "Kentucky",
+   "country": "United States",
+   "g_co2_per_kwh": 800
+  },
+  "US-LA": {
+   "name": "Louisiana",
+   "country": "United States",
+   "g_co2_per_kwh": 380
+  },
+  "US-ME": {
+   "name": "Maine",
+   "country": "United States",
+   "g_co2_per_kwh": 110
+  },
+  "US-MD": {
+   "name": "Maryland",
+   "country": "United States",
+   "g_co2_per_kwh": 300
+  },
+  "US-MA": {
+   "name": "Massachusetts",
+   "country": "United States",
+   "g_co2_per_kwh": 380
+  },
+  "US-MI": {
+   "name": "Michigan",
+   "country": "United States",
+   "g_co2_per_kwh": 460
+  },
+  "US-MN": {
+   "name": "Minnesota",
+   "country": "United States",
+   "g_co2_per_kwh": 390
+  },
+  "US-MS": {
+   "name": "Mississippi",
+   "country": "United States",
+   "g_co2_per_kwh": 410
+  },
+  "US-MO": {
+   "name": "Missouri",
+   "country": "United States",
+   "g_co2_per_kwh": 670
+  },
+  "US-MT": {
+   "name": "Montana",
+   "country": "United States",
+   "g_co2_per_kwh": 450
+  },
+  "US-NE": {
+   "name": "Nebraska",
+   "country": "United States",
+   "g_co2_per_kwh": 520
+  },
+  "US-NV": {
+   "name": "Nevada",
+   "country": "United States",
+   "g_co2_per_kwh": 340
+  },
+  "US-NH": {
+   "name": "New Hampshire",
+   "country": "United States",
+   "g_co2_per_kwh": 120
+  },
+  "US-NJ": {
+   "name": "New Jersey",
+   "country": "United States",
+   "g_co2_per_kwh": 230
+  },
+  "US-NM": {
+   "name": "New Mexico",
+   "country": "United States",
+   "g_co2_per_kwh": 450
+  },
+  "US-NY": {
+   "name": "New York",
+   "country": "United States",
+   "g_co2_per_kwh": 230
+  },
+  "US-NC": {
+   "name": "North Carolina",
+   "country": "United States",
+   "g_co2_per_kwh": 330
+  },
+  "US-ND": {
+   "name": "North Dakota",
+   "country": "United States",
+   "g_co2_per_kwh": 700
+  },
+  "US-OH": {
+   "name": "Ohio",
+   "country": "United States",
+   "g_co2_per_kwh": 530
+  },
+  "US-OK": {
+   "name": "Oklahoma",
+   "country": "United States",
+   "g_co2_per_kwh": 320
+  },
+  "US-OR": {
+   "name": "Oregon",
+   "country": "United States",
+   "g_co2_per_kwh": 160
+  },
+  "US-PA": {
+   "name": "Pennsylvania",
+   "country": "United States",
+   "g_co2_per_kwh": 330
+  },
+  "US-RI": {
+   "name": "Rhode Island",
+   "country": "United States",
+   "g_co2_per_kwh": 400
+  },
+  "US-SC": {
+   "name": "South Carolina",
+   "country": "United States",
+   "g_co2_per_kwh": 240
+  },
+  "US-SD": {
+   "name": "South Dakota",
+   "country": "United States",
+   "g_co2_per_kwh": 150
+  },
+  "US-TN": {
+   "name": "Tennessee",
+   "country": "United States",
+   "g_co2_per_kwh": 300
+  },
+  "US-TX": {
+   "name": "Texas",
+   "country": "United States",
+   "g_co2_per_kwh": 400
+  },
+  "US-UT": {
+   "name": "Utah",
+   "country": "United States",
+   "g_co2_per_kwh": 700
+  },
+  "US-VT": {
+   "name": "Vermont",
+   "country": "United States",
+   "g_co2_per_kwh": 10
+  },
+  "US-VA": {
+   "name": "Virginia",
+   "country": "United States",
+   "g_co2_per_kwh": 320
+  },
+  "US-WA": {
+   "name": "Washington",
+   "country": "United States",
+   "g_co2_per_kwh": 90
+  },
+  "US-WV": {
+   "name": "West Virginia",
+   "country": "United States",
+   "g_co2_per_kwh": 900
+  },
+  "US-WI": {
+   "name": "Wisconsin",
+   "country": "United States",
+   "g_co2_per_kwh": 540
+  },
+  "US-WY": {
+   "name": "Wyoming",
+   "country": "United States",
+   "g_co2_per_kwh": 900
+  },
+  "ISL": {
+   "name": "Iceland",
+   "country": "Iceland",
+   "g_co2_per_kwh": 30
+  },
+  "NOR": {
+   "name": "Norway",
+   "country": "Norway",
+   "g_co2_per_kwh": 30
+  },
+  "SWE": {
+   "name": "Sweden",
+   "country": "Sweden",
+   "g_co2_per_kwh": 40
+  },
+  "PRY": {
+   "name": "Paraguay",
+   "country": "Paraguay",
+   "g_co2_per_kwh": 25
+  },
+  "CHE": {
+   "name": "Switzerland",
+   "country": "Switzerland",
+   "g_co2_per_kwh": 45
+  },
+  "FRA": {
+   "name": "France",
+   "country": "France",
+   "g_co2_per_kwh": 85
+  },
+  "FIN": {
+   "name": "Finland",
+   "country": "Finland",
+   "g_co2_per_kwh": 80
+  },
+  "BRA": {
+   "name": "Brazil",
+   "country": "Brazil",
+   "g_co2_per_kwh": 100
+  },
+  "AUT": {
+   "name": "Austria",
+   "country": "Austria",
+   "g_co2_per_kwh": 110
+  },
+  "NZL": {
+   "name": "New Zealand",
+   "country": "New Zealand",
+   "g_co2_per_kwh": 110
+  },
+  "DNK": {
+   "name": "Denmark",
+   "country": "Denmark",
+   "g_co2_per_kwh": 150
+  },
+  "URY": {
+   "name": "Uruguay",
+   "country": "Uruguay",
+   "g_co2_per_kwh": 130
+  },
+  "CRI": {
+   "name": "Costa Rica",
+   "country": "Costa Rica",
+   "g_co2_per_kwh": 30
+  },
+  "PRT": {
+   "name": "Portugal",
+   "country": "Portugal",
+   "g_co2_per_kwh": 180
+  },
+  "ESP": {
+   "name": "Spain",
+   "country": "Spain",
+   "g_co2_per_kwh": 175
+  },
+  "BEL": {
+   "name": "Belgium",
+   "country": "Belgium",
+   "g_co2_per_kwh": 150
+  },
+  "GBR": {
+   "name": "United Kingdom",
+   "country": "United Kingdom",
+   "g_co2_per_kwh": 260
+  },
+  "ITA": {
+   "name": "Italy",
+   "country": "Italy",
+   "g_co2_per_kwh": 330
+  },
+  "DEU": {
+   "name": "Germany",
+   "country": "Germany",
+   "g_co2_per_kwh": 385
+  },
+  "NLD": {
+   "name": "Netherlands",
+   "country": "Netherlands",
+   "g_co2_per_kwh": 330
+  },
+  "IRL": {
+   "name": "Ireland",
+   "country": "Ireland",
+   "g_co2_per_kwh": 330
+  },
+  "USA": {
+   "name": "United States (average)",
+   "country": "United States (average)",
+   "g_co2_per_kwh": 370
+  },
+  "CAN": {
+   "name": "Canada (average)",
+   "country": "Canada (average)",
+   "g_co2_per_kwh": 170
+  },
+  "CHN": {
+   "name": "China",
+   "country": "China",
+   "g_co2_per_kwh": 580
+  },
+  "IND": {
+   "name": "India",
+   "country": "India",
+   "g_co2_per_kwh": 710
+  },
+  "JPN": {
+   "name": "Japan",
+   "country": "Japan",
+   "g_co2_per_kwh": 485
+  },
+  "KOR": {
+   "name": "South Korea",
+   "country": "South Korea",
+   "g_co2_per_kwh": 440
+  },
+  "AUS": {
+   "name": "Australia",
+   "country": "Australia",
+   "g_co2_per_kwh": 550
+  },
+  "ZAF": {
+   "name": "South Africa",
+   "country": "South Africa",
+   "g_co2_per_kwh": 710
+  },
+  "POL": {
+   "name": "Poland",
+   "country": "Poland",
+   "g_co2_per_kwh": 660
+  },
+  "RUS": {
+   "name": "Russia",
+   "country": "Russia",
+   "g_co2_per_kwh": 360
+  },
+  "MEX": {
+   "name": "Mexico",
+   "country": "Mexico",
+   "g_co2_per_kwh": 410
+  },
+  "IDN": {
+   "name": "Indonesia",
+   "country": "Indonesia",
+   "g_co2_per_kwh": 680
+  },
+  "SAU": {
+   "name": "Saudi Arabia",
+   "country": "Saudi Arabia",
+   "g_co2_per_kwh": 560
+  },
+  "TUR": {
+   "name": "Turkey",
+   "country": "Turkey",
+   "g_co2_per_kwh": 440
+  },
+  "IRN": {
+   "name": "Iran",
+   "country": "Iran",
+   "g_co2_per_kwh": 500
+  },
+  "EGY": {
+   "name": "Egypt",
+   "country": "Egypt",
+   "g_co2_per_kwh": 470
+  },
+  "ARG": {
+   "name": "Argentina",
+   "country": "Argentina",
+   "g_co2_per_kwh": 330
+  },
+  "CHL": {
+   "name": "Chile",
+   "country": "Chile",
+   "g_co2_per_kwh": 290
+  },
+  "COL": {
+   "name": "Colombia",
+   "country": "Colombia",
+   "g_co2_per_kwh": 160
+  },
+  "PER": {
+   "name": "Peru",
+   "country": "Peru",
+   "g_co2_per_kwh": 260
+  },
+  "KEN": {
+   "name": "Kenya",
+   "country": "Kenya",
+   "g_co2_per_kwh": 90
+  },
+  "ETH": {
+   "name": "Ethiopia",
+   "country": "Ethiopia",
+   "g_co2_per_kwh": 25
+  },
+  "NGA": {
+   "name": "Nigeria",
+   "country": "Nigeria",
+   "g_co2_per_kwh": 400
+  },
+  "VNM": {
+   "name": "Vietnam",
+   "country": "Vietnam",
+   "g_co2_per_kwh": 470
+  },
+  "THA": {
+   "name": "Thailand",
+   "country": "Thailand",
+   "g_co2_per_kwh": 500
+  },
+  "MYS": {
+   "name": "Malaysia",
+   "country": "Malaysia",
+   "g_co2_per_kwh": 590
+  },
+  "PHL": {
+   "name": "Philippines",
+   "country": "Philippines",
+   "g_co2_per_kwh": 610
+  },
+  "PAK": {
+   "name": "Pakistan",
+   "country": "Pakistan",
+   "g_co2_per_kwh": 400
+  },
+  "BGD": {
+   "name": "Bangladesh",
+   "country": "Bangladesh",
+   "g_co2_per_kwh": 570
+  },
+  "UKR": {
+   "name": "Ukraine",
+   "country": "Ukraine",
+   "g_co2_per_kwh": 260
+  },
+  "KAZ": {
+   "name": "Kazakhstan",
+   "country": "Kazakhstan",
+   "g_co2_per_kwh": 640
+  },
+  "GRC": {
+   "name": "Greece",
+   "country": "Greece",
+   "g_co2_per_kwh": 390
+  },
+  "CZE": {
+   "name": "Czechia",
+   "country": "Czechia",
+   "g_co2_per_kwh": 440
+  },
+  "HUN": {
+   "name": "Hungary",
+   "country": "Hungary",
+   "g_co2_per_kwh": 220
+  },
+  "ROU": {
+   "name": "Romania",
+   "country": "Romania",
+   "g_co2_per_kwh": 260
+  },
+  "BGR": {
+   "name": "Bulgaria",
+   "country": "Bulgaria",
+   "g_co2_per_kwh": 400
+  },
+  "SRB": {
+   "name": "Serbia",
+   "country": "Serbia",
+   "g_co2_per_kwh": 600
+  },
+  "ISR": {
+   "name": "Israel",
+   "country": "Israel",
+   "g_co2_per_kwh": 520
+  },
+  "ARE": {
+   "name": "United Arab Emirates",
+   "country": "United Arab Emirates",
+   "g_co2_per_kwh": 490
+  },
+  "QAT": {
+   "name": "Qatar",
+   "country": "Qatar",
+   "g_co2_per_kwh": 490
+  },
+  "KWT": {
+   "name": "Kuwait",
+   "country": "Kuwait",
+   "g_co2_per_kwh": 600
+  },
+  "DZA": {
+   "name": "Algeria",
+   "country": "Algeria",
+   "g_co2_per_kwh": 490
+  },
+  "MAR": {
+   "name": "Morocco",
+   "country": "Morocco",
+   "g_co2_per_kwh": 610
+  },
+  "VEN": {
+   "name": "Venezuela",
+   "country": "Venezuela",
+   "g_co2_per_kwh": 180
+  },
+  "ECU": {
+   "name": "Ecuador",
+   "country": "Ecuador",
+   "g_co2_per_kwh": 160
+  },
+  "BOL": {
+   "name": "Bolivia",
+   "country": "Bolivia",
+   "g_co2_per_kwh": 450
+  },
+  "CUB": {
+   "name": "Cuba",
+   "country": "Cuba",
+   "g_co2_per_kwh": 640
+  },
+  "MNG": {
+   "name": "Mongolia",
+   "country": "Mongolia",
+   "g_co2_per_kwh": 770
+  },
+  "BWA": {
+   "name": "Botswana",
+   "country": "Botswana",
+   "g_co2_per_kwh": 900
+  },
+  "EST": {
+   "name": "Estonia",
+   "country": "Estonia",
+   "g_co2_per_kwh": 420
+  },
+  "LTU": {
+   "name": "Lithuania",
+   "country": "Lithuania",
+   "g_co2_per_kwh": 160
+  },
+  "LVA": {
+   "name": "Latvia",
+   "country": "Latvia",
+   "g_co2_per_kwh": 120
+  },
+  "SVK": {
+   "name": "Slovakia",
+   "country": "Slovakia",
+   "g_co2_per_kwh": 120
+  },
+  "SVN": {
+   "name": "Slovenia",
+   "country": "Slovenia",
+   "g_co2_per_kwh": 230
+  },
+  "HRV": {
+   "name": "Croatia",
+   "country": "Croatia",
+   "g_co2_per_kwh": 200
+  },
+  "LUX": {
+   "name": "Luxembourg",
+   "country": "Luxembourg",
+   "g_co2_per_kwh": 105
+  },
+  "ALB": {
+   "name": "Albania",
+   "country": "Albania",
+   "g_co2_per_kwh": 25
+  },
+  "NPL": {
+   "name": "Nepal",
+   "country": "Nepal",
+   "g_co2_per_kwh": 20
+  },
+  "BTN": {
+   "name": "Bhutan",
+   "country": "Bhutan",
+   "g_co2_per_kwh": 10
+  },
+  "LAO": {
+   "name": "Laos",
+   "country": "Laos",
+   "g_co2_per_kwh": 260
+  },
+  "MMR": {
+   "name": "Myanmar",
+   "country": "Myanmar",
+   "g_co2_per_kwh": 400
+  },
+  "LKA": {
+   "name": "Sri Lanka",
+   "country": "Sri Lanka",
+   "g_co2_per_kwh": 500
+  },
+  "ZMB": {
+   "name": "Zambia",
+   "country": "Zambia",
+   "g_co2_per_kwh": 110
+  },
+  "ZWE": {
+   "name": "Zimbabwe",
+   "country": "Zimbabwe",
+   "g_co2_per_kwh": 300
+  },
+  "MOZ": {
+   "name": "Mozambique",
+   "country": "Mozambique",
+   "g_co2_per_kwh": 130
+  },
+  "COD": {
+   "name": "DR Congo",
+   "country": "DR Congo",
+   "g_co2_per_kwh": 25
+  },
+  "GHA": {
+   "name": "Ghana",
+   "country": "Ghana",
+   "g_co2_per_kwh": 400
+  },
+  "TZA": {
+   "name": "Tanzania",
+   "country": "Tanzania",
+   "g_co2_per_kwh": 350
+  },
+  "AGO": {
+   "name": "Angola",
+   "country": "Angola",
+   "g_co2_per_kwh": 170
+  },
+  "NAM": {
+   "name": "Namibia",
+   "country": "Namibia",
+   "g_co2_per_kwh": 60
+  },
+  "TWN": {
+   "name": "Taiwan",
+   "country": "Taiwan",
+   "g_co2_per_kwh": 560
+  },
+  "IRQ": {
+   "name": "Iraq",
+   "country": "Iraq",
+   "g_co2_per_kwh": 690
+  },
+  "OMN": {
+   "name": "Oman",
+   "country": "Oman",
+   "g_co2_per_kwh": 470
+  },
+  "LBY": {
+   "name": "Libya",
+   "country": "Libya",
+   "g_co2_per_kwh": 600
+  },
+  "TUN": {
+   "name": "Tunisia",
+   "country": "Tunisia",
+   "g_co2_per_kwh": 470
+  },
+  "JAM": {
+   "name": "Jamaica",
+   "country": "Jamaica",
+   "g_co2_per_kwh": 520
+  },
+  "DOM": {
+   "name": "Dominican Republic",
+   "country": "Dominican Republic",
+   "g_co2_per_kwh": 540
+  },
+  "GTM": {
+   "name": "Guatemala",
+   "country": "Guatemala",
+   "g_co2_per_kwh": 330
+  },
+  "HND": {
+   "name": "Honduras",
+   "country": "Honduras",
+   "g_co2_per_kwh": 280
+  },
+  "PAN": {
+   "name": "Panama",
+   "country": "Panama",
+   "g_co2_per_kwh": 160
+  },
+  "BLR": {
+   "name": "Belarus",
+   "country": "Belarus",
+   "g_co2_per_kwh": 440
+  },
+  "GEO": {
+   "name": "Georgia",
+   "country": "Georgia",
+   "g_co2_per_kwh": 160
+  },
+  "ARM": {
+   "name": "Armenia",
+   "country": "Armenia",
+   "g_co2_per_kwh": 250
+  },
+  "AZE": {
+   "name": "Azerbaijan",
+   "country": "Azerbaijan",
+   "g_co2_per_kwh": 470
+  },
+  "UZB": {
+   "name": "Uzbekistan",
+   "country": "Uzbekistan",
+   "g_co2_per_kwh": 500
+  },
+  "SGP": {
+   "name": "Singapore",
+   "country": "Singapore",
+   "g_co2_per_kwh": 470
+  },
+  "CMR": {
+   "name": "Cameroon",
+   "country": "Cameroon",
+   "g_co2_per_kwh": 270
+  },
+  "UGA": {
+   "name": "Uganda",
+   "country": "Uganda",
+   "g_co2_per_kwh": 40
+  },
+  "SDN": {
+   "name": "Sudan",
+   "country": "Sudan",
+   "g_co2_per_kwh": 260
+  },
+  "SEN": {
+   "name": "Senegal",
+   "country": "Senegal",
+   "g_co2_per_kwh": 510
+  },
+  "CIV": {
+   "name": "Côte d'Ivoire",
+   "country": "Côte d'Ivoire",
+   "g_co2_per_kwh": 410
+  },
+  "TKM": {
+   "name": "Turkmenistan",
+   "country": "Turkmenistan",
+   "g_co2_per_kwh": 550
+  },
+  "KGZ": {
+   "name": "Kyrgyzstan",
+   "country": "Kyrgyzstan",
+   "g_co2_per_kwh": 120
+  },
+  "TJK": {
+   "name": "Tajikistan",
+   "country": "Tajikistan",
+   "g_co2_per_kwh": 40
+  },
+  "AFG": {
+   "name": "Afghanistan",
+   "country": "Afghanistan",
+   "g_co2_per_kwh": 130
+  },
+  "PNG": {
+   "name": "Papua New Guinea",
+   "country": "Papua New Guinea",
+   "g_co2_per_kwh": 500
+  },
+  "NIC": {
+   "name": "Nicaragua",
+   "country": "Nicaragua",
+   "g_co2_per_kwh": 270
+  },
+  "SLV": {
+   "name": "El Salvador",
+   "country": "El Salvador",
+   "g_co2_per_kwh": 110
+  },
+  "MDG": {
+   "name": "Madagascar",
+   "country": "Madagascar",
+   "g_co2_per_kwh": 450
+  },
+  "MLI": {
+   "name": "Mali",
+   "country": "Mali",
+   "g_co2_per_kwh": 400
+  },
+  "BIH": {
+   "name": "Bosnia and Herzegovina",
+   "country": "Bosnia and Herzegovina",
+   "g_co2_per_kwh": 580
+  },
+  "MKD": {
+   "name": "North Macedonia",
+   "country": "North Macedonia",
+   "g_co2_per_kwh": 450
+  },
+  "MDA": {
+   "name": "Moldova",
+   "country": "Moldova",
+   "g_co2_per_kwh": 580
+  },
+  "JOR": {
+   "name": "Jordan",
+   "country": "Jordan",
+   "g_co2_per_kwh": 400
+  },
+  "LBN": {
+   "name": "Lebanon",
+   "country": "Lebanon",
+   "g_co2_per_kwh": 600
+  },
+  "SYR": {
+   "name": "Syria",
+   "country": "Syria",
+   "g_co2_per_kwh": 550
+  },
+  "YEM": {
+   "name": "Yemen",
+   "country": "Yemen",
+   "g_co2_per_kwh": 560
+  },
+  "KHM": {
+   "name": "Cambodia",
+   "country": "Cambodia",
+   "g_co2_per_kwh": 420
+  },
+  "PRK": {
+   "name": "North Korea",
+   "country": "North Korea",
+   "g_co2_per_kwh": 500
+  },
+  "CYP": {
+   "name": "Cyprus",
+   "country": "Cyprus",
+   "g_co2_per_kwh": 620
+  },
+  "MNE": {
+   "name": "Montenegro",
+   "country": "Montenegro",
+   "g_co2_per_kwh": 400
+  }
+ }
+}

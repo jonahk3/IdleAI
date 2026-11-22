@@ -1,7 +1,7 @@
 """Carbon data: how clean each device's electricity is.
 
 Everything else calls the functions here and never reads the data file directly,
-so a live source (e.g. Electricity Maps) can replace provinces.json later without
+so a live source (e.g. Electricity Maps) can replace carbon_data.json later without
 changing any other code.
 """
 import json
@@ -10,14 +10,28 @@ from pathlib import Path
 
 from peer.config import LAPTOP_WATTS, UNKNOWN_G_CO2_PER_KWH
 
-DATA_FILE = Path(__file__).with_name("provinces.json")
+DATA_FILE = Path(__file__).with_name("carbon_data.json")
+MAP_FILE = Path(__file__).parent / "assets" / "world_map.geojson"  # simplified Natural Earth outlines
 
 
 @lru_cache(maxsize=1)
 def provinces() -> dict[str, dict]:
-    """{"QC": {"name": "Quebec", "g_co2_per_kwh": 2}, ...}, cleanest first."""
-    data = json.loads(DATA_FILE.read_text(encoding="utf-8"))["provinces"]
+    """Every place we have data for, cleanest first:
+    {"QC": {"name": "Quebec", "country": "Canada", "g_co2_per_kwh": 2}, "US-CA": {...}, "FRA": {...}, ...}
+    Codes: Canadian provinces (QC), US states (US-CA), other countries (ISO code, e.g. FRA)."""
+    data = json.loads(DATA_FILE.read_text(encoding="utf-8"))["regions"]
     return dict(sorted(data.items(), key=lambda kv: kv[1]["g_co2_per_kwh"]))
+
+
+regions = provinces  # clearer name now that it covers the world
+
+
+def place_name(code: str | None) -> str:
+    """'Quebec, Canada', 'California, United States' or 'France'."""
+    info = provinces().get((code or "").upper())
+    if not info:
+        return "unknown location"
+    return info["name"] if info["country"] == info["name"] else f"{info['name']}, {info['country']}"
 
 
 def intensity(location: str | None) -> float:

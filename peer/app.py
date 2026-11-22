@@ -14,6 +14,7 @@ import json
 import os
 import re
 import time
+from functools import lru_cache
 from pathlib import Path
 
 from nicegui import app, run, ui
@@ -140,6 +141,48 @@ def chat_bubbles(prompt: str, attached: str, answer: str | None) -> None:
                 ui.markdown(answer)
 
 
+# ---------------------------------------------------------------- world map
+MAP_COLOURS = [[0.0, MINT], [0.15, SAGE], [0.45, "#e0a458"], [1.0, "#b3261e"]]  # low -> high g CO2/kWh
+
+
+@lru_cache(maxsize=1)
+def map_shapes() -> dict:
+    return json.loads(carbon.MAP_FILE.read_text(encoding="utf-8"))
+
+
+def world_map(selected: str | None) -> dict:
+    """A Plotly choropleth: every country (US states and Canadian provinces on their own), coloured by
+    grid g CO2/kWh, with this device's place outlined. Outlines are bundled, so it works offline."""
+    shapes = map_shapes()
+    data = carbon.provinces()
+    codes = [f["id"] for f in shapes["features"] if f["id"] in data]
+    traces = [{
+        "type": "choropleth", "geojson": shapes, "featureidkey": "id", "locations": codes,
+        "z": [data[c]["g_co2_per_kwh"] for c in codes],
+        "text": [f"{carbon.place_name(c)}: {data[c]['g_co2_per_kwh']:g} g CO2/kWh" for c in codes],
+        "hoverinfo": "text", "zmin": 0, "zmax": 800, "colorscale": MAP_COLOURS,
+        "marker": {"line": {"color": "white", "width": 0.4}},
+        "colorbar": {"title": {"text": "g CO2/kWh"}, "thickness": 12, "len": 0.8},
+    }, {  # places we have no data for
+        "type": "choropleth", "geojson": shapes, "featureidkey": "id",
+        "locations": [f["id"] for f in shapes["features"] if f["id"] not in data],
+        "z": [0] * sum(1 for f in shapes["features"] if f["id"] not in data),
+        "colorscale": [[0, "#e6e9e9"], [1, "#e6e9e9"]], "showscale": False, "hoverinfo": "skip",
+        "marker": {"line": {"color": "white", "width": 0.4}},
+    }]
+    if selected in data:
+        traces.append({"type": "choropleth", "geojson": shapes, "featureidkey": "id", "locations": [selected],
+                       "z": [1], "colorscale": [[0, "rgba(0,0,0,0)"], [1, "rgba(0,0,0,0)"]], "showscale": False,
+                       "hoverinfo": "skip", "marker": {"line": {"color": NAVY, "width": 2.5}}})
+    return {"data": traces, "layout": {
+        "geo": {"visible": False, "projection": {"type": "natural earth"}, "lataxis": {"range": [-58, 85]},
+                "bgcolor": "rgba(0,0,0,0)"},
+        "margin": {"l": 0, "r": 0, "t": 0, "b": 0}, "height": 420, "paper_bgcolor": "rgba(0,0,0,0)",
+        "dragmode": False}, "config": {"displayModeBar": False, "scrollZoom": False,
+                   # Plotly loads a base map file even when it's hidden; use our bundled copy, not the internet
+                   "topojsonURL": "/assets/topojson/"}}
+
+
 # ---------------------------------------------------------------- saved chats
 CHATS_DIR = PROJECT_DIR / "chats"   # one JSON file per chat (a chat can hold many prompts)
 conversation: list[dict] = []       # the open chat's turns: {"prompt", "attached", "answer", "meta", ...}
@@ -199,15 +242,16 @@ def index() -> None:
         with ui.column().classes("gap-0"):
             ui.label("Idle.").classes(f"idle-title text-2xl text-[{SAGE}] leading-none")
             ui.label("model computing software").classes("idle-caption leading-none")
-        with ui.tabs().classes("ml-6") as tabs:
+        with ui.tabs().classes("absolute left-1/2 -translate-x-1/2") as tabs:  # centred in the header
             t_ask = ui.tab("Ask", icon="chat_bubble_outline")
             t_co2 = ui.tab("Your CO2 use", icon="eco")
             t_set = ui.tab("Settings", icon="settings")
         ui.space()
         ollama_badge = ui.label().classes("idle-pill text-xs")
         hosting_badge = ui.label("● Hosting").classes(f"idle-pill bg-[{MINT}] text-xs")
-        credits_pill = ui.label().classes("idle-pill font-semibold")
-        with credits_pill:
+        with ui.row().classes("idle-pill items-center gap-1 no-wrap") as credits_box:
+            ui.icon("toll", color="primary").classes("text-lg")
+            credits_pill = ui.label().classes("font-semibold")
             credits_tip = ui.tooltip()
 
     # ----- server window (pops out over the app) -----
@@ -226,13 +270,13 @@ def index() -> None:
 
         # ================================================================ ASK (chat + history)
         with ui.tab_panel(t_ask).classes("gap-3"):
-            with ui.row().classes("w-full no-wrap gap-4 items-start"):
+            with ui.row().classes("w-full no-wrap gap-4 items-stretch"):
                 # ----- the chat (left)
                 with ui.column().classes("grow gap-3 min-w-0"):
                     with ui.row().classes("w-full items-center no-wrap gap-3"):
                         host_button = ui.button(on_click=lambda: toggle_host()).props("unelevated no-caps").classes("shrink-0")
                         ui.button("Server window", icon="open_in_new", on_click=lambda: server_dialog.open()
-                                  ).props("outline no-caps color=dark").classes("shrink-0")
+                                  ).props("unelevated no-caps color=accent text-color=dark").classes("shrink-0")
                         ui.label("Hosting shares this device's AI with your grid. Prompts are split across your "
                                  "grid, lowest-carbon electricity first.").classes("text-xs opacity-50")
 
@@ -246,13 +290,13 @@ def index() -> None:
                             chips = ui.row().classes("gap-2")
                             attach_warning = ui.label().classes("text-sm text-red-700")
                             pdf_button = ui.button("Install PDF support", icon="download",
-                                                   on_click=lambda: install_pdf()).props("outline dense no-caps")
+                                                   on_click=lambda: install_pdf()).props("unelevated dense no-caps color=accent text-color=dark")
                         uploader = ui.upload(multiple=True, auto_upload=True, on_upload=lambda e: on_upload(e)
                                              ).style("position:absolute; width:1px; height:1px; opacity:0; overflow:hidden")
                         # (invisible: the paperclip button below opens its file picker)
                         with ui.row().classes("w-full items-end no-wrap gap-2"):
                             # Opens the file picker right in the page: browsers only allow that directly from a click.
-                            ui.button(icon="attach_file").props("flat round color=dark").tooltip(
+                            ui.button(icon="attach_file").props("flat round color=primary").tooltip(
                                 "Add files (PDF, images, text)").on(
                                 "click", js_handler=f'() => document.querySelector("#{uploader.html_id} input[type=file]").click()')
                             prompt = ui.textarea(placeholder="Message Idle…  (Ctrl+Enter to send)"
@@ -262,7 +306,7 @@ def index() -> None:
                             stop_button = ui.button(icon="stop", on_click=lambda: bridge.ask.stop()
                                                     ).props("round unelevated color=negative").tooltip("Stop")
                             send_button = ui.button(icon="arrow_upward", on_click=lambda: send()
-                                                    ).props("round unelevated color=dark").tooltip("Send")
+                                                    ).props("round unelevated color=primary").tooltip("Send")
                         with ui.row().classes("w-full items-center no-wrap gap-2"):
                             ui.label("Model").classes("idle-caption")
                             model_options = {m: f"{m}  ·  {'text + images' if i['images'] else 'text'}  ·  ~{i['size']}"
@@ -275,12 +319,13 @@ def index() -> None:
                             ui.label(f"planned by {COORDINATOR_MODEL}").classes("text-xs opacity-40")
 
                 # ----- chat history (right side)
-                with ui.card().classes("idle-card w-72 shrink-0 gap-2"):
+                with ui.card().classes("idle-card w-72 shrink-0 gap-2 self-stretch flex flex-col"):  # as tall as the chat
                     with ui.row().classes("w-full items-center"):
                         ui.label("Chats").classes("idle-caption")
                         ui.space()
-                        ui.button("New chat", icon="add", on_click=lambda: new_chat()).props("flat dense no-caps color=dark")
-                    with ui.scroll_area().classes("w-full h-[70vh]"):
+                        ui.button("New chat", icon="add", on_click=lambda: new_chat()
+                                  ).props("unelevated dense no-caps color=accent text-color=dark")
+                    with ui.scroll_area().classes("w-full").style("flex: 1 1 0; min-height: 0"):
                         history_list = ui.column().classes("w-full gap-1")
 
         # ================================================================ YOUR CO2 USE
@@ -295,9 +340,14 @@ def index() -> None:
                     ui.label("Estimate: a typical device uses about 30 W while running a model. Location data "
                              "is sample data for now.").classes("text-xs opacity-50")
                 with ui.card().classes("idle-card w-1/2 gap-3"):
-                    ui.label("Compared with other provinces (g CO2 per hour)").classes("idle-caption")
+                    ui.label("Compared with other places (g CO2 per hour)").classes("idle-caption")
                     compare_box = ui.column().classes("w-full gap-2")
                     ui.label("Helpers on the lowest-carbon electricity get your prompts first.").classes("text-xs opacity-60")
+            with ui.card().classes("idle-card w-full gap-1"):
+                ui.label("Electricity around the world (g CO2 per kWh)").classes("idle-caption")
+                co2_map = ui.plotly(world_map(s["location"])).classes("w-full")
+                ui.label("Countries use national averages; US states and Canadian provinces are shown on their own. "
+                         "Your location is outlined. Approximate figures.").classes("text-xs opacity-60")
             with ui.card().classes("idle-soft w-full"):
                 ui.label("This session").classes("idle-caption")
                 with ui.row().classes("w-full gap-10"):
@@ -323,12 +373,12 @@ def index() -> None:
                         ui.label("Shown to other devices on your grid.").classes("text-xs opacity-60")
                     with ui.column().classes("w-1/2 gap-1"):
                         ui.label("Device location").classes("idle-caption")
-                        locations = {"": "Not set"} | {
-                            code: f"{code} - {info['name']} ({info['g_co2_per_kwh']} g CO2/kWh)"
-                            for code, info in carbon.provinces().items()}
-                        ui.select(locations, value=s["location"] or "",
-                                  on_change=lambda e: changed("location", e.value or "")).classes("w-full").props("outlined dense")
-                        ui.label("Sample data for now. Prompts go to the lowest-carbon electricity first.").classes("text-xs opacity-60")
+                        locations = {"": "Not set"} | dict(sorted(
+                            ((code, f"{carbon.place_name(code)} ({info['g_co2_per_kwh']:g} g CO2/kWh)")
+                             for code, info in carbon.provinces().items()), key=lambda kv: kv[1]))
+                        ui.select(locations, value=s["location"] or "", with_input=True,
+                                  on_change=lambda e: changed("location", e.value or "")
+                                  ).classes("w-full").props("outlined dense").tooltip("Type to search")
                 ui.label("Grid name").classes("idle-caption mt-2")
                 with ui.row().classes("w-full items-start no-wrap gap-2"):
                     grid_input = ui.input(value=s["room"], placeholder="general",
@@ -337,9 +387,9 @@ def index() -> None:
                                           ).classes("grow").props("outlined dense")
                     grid_input.on("keydown.enter", lambda: apply_grid())
                     grid_input.on("blur", lambda: apply_grid())
-                    ui.button("Use this grid", on_click=lambda: apply_grid()).props("unelevated no-caps color=dark")
+                    ui.button("Use this grid", on_click=lambda: apply_grid()).props("unelevated no-caps color=primary")
                     ui.button("New private grid", on_click=lambda: (grid_input.set_value(new_room_name()), apply_grid())
-                              ).props("outline no-caps")
+                              ).props("unelevated no-caps color=accent text-color=dark")
                 ui.label("Every device on the same grid name can share its AI. 'general' is open to all; make a "
                          "private grid for just your team (share the name privately).").classes("text-xs opacity-60")
                 ui.label("Models to download and share").classes("idle-caption mt-2")
@@ -360,6 +410,9 @@ def index() -> None:
                              on_change=lambda e: save("extra_peers", e.value)).classes("w-full").props("outlined dense")
                     ui.switch("Also search the Wi-Fi", value=s["search_wifi"], on_change=lambda e: save("search_wifi", e.value))
                     status_line = ui.label().classes("text-sm opacity-70")
+
+    # The map is drawn while its tab is hidden, so redraw it at the right size when the tab opens.
+    tabs.on_value_change(lambda e: co2_map.update() if e.value in (t_co2, "Your CO2 use") else None)
 
     # ---------------------------------------------------------------- chat
     live = {"status": None}  # the "working…" label of the message being answered
@@ -577,20 +630,23 @@ def index() -> None:
             co2_rate_note.set_text("Pick where this device is to see its CO2.")
         else:
             co2_rate.set_text(f"{c['g_per_hour']:.2f} g CO2 / hour")
-            co2_rate_note.set_text(f"while running a model · {c['location']} electricity: {c['g_per_kwh']:g} g CO2/kWh")
+            co2_rate_note.set_text(f"while running a model · electricity in {carbon.place_name(c['location'])}: "
+                                   f"{c['g_per_kwh']:g} g CO2/kWh")
         co2_status.set_text("● Working now" if c["working_now"] else "○ Idle (almost no extra CO2)")
         key = (c["g_per_hour"], c["location"])
         if drawn.get("compare") != key:  # only redraw when it changes
             drawn["compare"] = key
+            co2_map.update_figure(world_map(c["location"]))
             compare_box.clear()
-            rows = [(f"{c['cleanest']['code']} (cleanest)", c["cleanest"]["g_per_hour"]),
-                    (f"You ({c['location']})" if c["location"] else "You (not set)", c["g_per_hour"]),
-                    (f"{c['dirtiest']['code']} (dirtiest)", c["dirtiest"]["g_per_hour"])]
+            name = lambda code: carbon.provinces()[code]["name"]
+            rows = [(f"{name(c['cleanest']['code'])} (cleanest)", c["cleanest"]["g_per_hour"]),
+                    (f"You ({name(c['location'])})" if c["location"] else "You (not set)", c["g_per_hour"]),
+                    (f"{name(c['dirtiest']['code'])} (dirtiest)", c["dirtiest"]["g_per_hour"])]
             top = c["dirtiest"]["g_per_hour"] or 1
             with compare_box:
-                for name, value in rows:
+                for label, value in rows:
                     with ui.row().classes("w-full items-center no-wrap gap-2"):
-                        ui.label(name).classes("w-32 text-sm font-semibold")
+                        ui.label(label).classes("w-40 text-sm font-semibold")
                         ui.linear_progress(value=max((value or 0) / top, 0.01), show_value=False, size="12px",
                                            color=grid_colour(None if value is None else value / c["watts"] * 1000)
                                            ).classes("grow")
@@ -606,8 +662,8 @@ def index() -> None:
     def tick() -> None:
         state = bridge.state()
         c = state["credits"]
-        credits_pill.set_text(f"Credits {c['balance']:.2f}")
-        credits_pill.classes(replace=f"idle-pill font-semibold {'text-[#b3261e]' if c['balance'] < 0 else 'text-[' + NAVY + ']'}")
+        credits_pill.set_text(f"Credits: {c['balance']:.2f}")
+        credits_pill.classes(replace=f"font-semibold {'text-[#b3261e]' if c['balance'] < 0 else 'text-[' + NAVY + ']'}")
         credits_tip.set_text(f"started at {STARTING_CREDITS:.0f} · earned {c['earned']:.2f} · spent {c['spent']:.2f}"
                              " · resets each launch · tracker only")
         hosting_badge.set_visibility(state["hosting"]["running"])
@@ -630,10 +686,10 @@ def index() -> None:
         host_running = state["hosting"]["running"]
         server_state.set_text("● Hosting" if host_running else "○ Not hosting")
         loc = state["settings"]["location"]
-        co2_where.set_text(f"Location: {carbon.label(loc)} (change it in Settings)" if loc else
+        co2_where.set_text(f"Location: {carbon.place_name(loc)} (change it in Settings)" if loc else
                            "Location not set: set it in Settings")
         host_button.set_text("Stop hosting" if host_running else "Start hosting")
-        host_button.props(f"color={'negative' if host_running else 'dark'} icon={'stop' if host_running else 'play_arrow'}")
+        host_button.props(f"color={'negative' if host_running else 'primary'} icon={'stop' if host_running else 'play_arrow'}")
         host_earned.set_text(f"earned this session: {c['earned']:.2f} credits")
         host_feed.update()
         update_co2(state["co2"])

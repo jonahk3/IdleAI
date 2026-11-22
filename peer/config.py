@@ -66,7 +66,7 @@ CREDITS_PER_MINUTE = 300.0       # used instead when a model doesn't report toke
 STARTING_CREDITS = 500.0         # every session starts with this balance (until accounts exist)
 
 # Carbon-aware routing: parts go to the devices on the cleanest power grids first.
-# Locations are fake for now (each device picks one); data is in peer/provinces.json.
+# Locations are picked on each device; data is in peer/carbon_data.json (approximate).
 UNKNOWN_G_CO2_PER_KWH = 1000    # a device with no location is treated as the dirtiest
 LAPTOP_WATTS = 30               # rough power draw while running a model (for CO2 estimates)
 

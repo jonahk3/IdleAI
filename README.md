@@ -115,10 +115,12 @@ download fails. The list lives in `peer/config.py` (`MODELS`).
 
 ## Carbon-aware routing
 
-Every device picks its **location** (GUI: *Location* in the settings; terminal: `--location QC`
-for both `peer.server` and `peer.split`). Locations are sample data for now; the grid carbon intensity
-of each province/territory is in `peer/provinces.json` (approximate, from Canada's National
-Inventory Report). Replace it with live data later by changing only `peer/carbon.py`.
+Every device picks its **location** (Idle app: *Settings*; terminal: `--location QC`, `US-CA`, `FRA`
+for both `peer.server` and `peer.split`). `peer/carbon_data.json` has the approximate grid carbon
+intensity (g CO2/kWh) of every Canadian province/territory, every US state and national averages
+for ~140 other countries; the *Your CO2 use* tab shows them on a world map (outlines from Natural
+Earth, bundled so it works offline). Replace the data with live figures later by changing only
+`peer/carbon.py`.
 
 After the plan is ready, **code (not the AI) decides where the parts go**: all available devices,
 yours included, are ranked by g CO2/kWh and the cleanest ones get the parts. Even a task that
@@ -326,7 +328,8 @@ Run the server in one terminal and `python3 -m peer.chat --peer localhost` in an
 | `peer/settings.py` | Saved settings shared by the GUI and the bridge |
 | `peer/gui.py` | The window: builds and runs the commands below for you, remembers settings |
 | `peer/attachments.py` | Reads attached files and images and adds them to messages |
-| `peer/carbon.py` + `peer/provinces.json` | Grid CO2 per kWh by province, used to send parts to the cleanest devices |
+| `peer/carbon.py` + `peer/carbon_data.json` | Grid CO2 per kWh by province, US state and country, used to send parts to the cleanest devices |
+| `peer/assets/world_map.geojson` | Simplified world map outlines (Natural Earth, public domain) for the CO2 map |
 | `peer/check.py` | `python -m peer.check IP`: explains why a device can't be reached |
 | `peer/credits.py` | How many credits a piece of work costs/earns (tokens, or compute time) |
 | `peer/room.py` | Grid names: posts/reads device addresses on ntfy.sh so peers find each other |
@@ -342,3 +345,11 @@ Planned next steps:
 3. **Carbon-aware routing**: prefer devices in provinces with clean power (QC, MB, BC).
 4. **Credits** for lending compute, plus a live **dashboard**.
 5. **Fault tolerance**: if a device dies, its chunks get reassigned.
+
+## Credits for bundled data
+
+- Map outlines: [Natural Earth](https://www.naturalearthdata.com/) (public domain), simplified into
+  `peer/assets/world_map.geojson`.
+- `peer/assets/topojson/world_110m.json`: from [plotly.js](https://github.com/plotly/plotly.js) (MIT
+  licence), bundled so the map doesn't need the internet.
+- Grid carbon intensities in `peer/carbon_data.json` are approximate, rounded sample figures.
