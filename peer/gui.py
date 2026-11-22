@@ -91,6 +91,7 @@ class Runner:
         self.root, self.on_text, self.on_exit = root, on_text, on_exit
         self.proc: subprocess.Popen | None = None
         self.output = ""
+        self.credit_pos = 0
         self._queue: queue.Queue = queue.Queue()
 
     @property
@@ -101,6 +102,7 @@ class Runner:
         env = dict(os.environ, PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8")
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         self.output = ""
+        self.credit_pos = 0  # how much of the output has been checked for [credits] lines
         self.proc = subprocess.Popen(
             cmd, cwd=PROJECT_DIR, env=env, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0, creationflags=flags,
@@ -151,7 +153,7 @@ class IdleApp:
         self.root = root
         self.s = load_settings()
         root.title("Idle: share AI between laptops")
-        root.geometry("840x760")
+        root.geometry("840x790")
         root.minsize(640, 520)
 
         self.v = {k: (tk.BooleanVar(value=v) if isinstance(v, bool) else tk.StringVar(value=v))
@@ -161,15 +163,20 @@ class IdleApp:
         for var in list(self.v.values()) + list(self.host_model_vars.values()):
             var.trace_add("write", lambda *_: self.on_settings_changed())
         self.files: list[str] = []  # attachments for the next prompt (not saved)
+        # Credits for this session only: they start at 0 every time the window opens.
+        self.earned = 0.0
+        self.spent = 0.0
 
         self.build_top()
         self.host_frame = self.build_host()
         self.ask_frame = self.build_ask()
-        self.ask_runner = Runner(root, lambda t: self.write(self.ask_log, t), self.ask_finished)
+        self.ask_runner = Runner(root, lambda t: self.output_text(self.ask_log, self.ask_runner, t),
+                                 self.ask_finished)
         self.find_runner = Runner(root, lambda t: self.write(self.ask_log, t), self.find_finished)
         self.pip_runner = Runner(root, lambda t: self.write(self.ask_log, t), self.pip_finished)
         self.attach_error = ""  # why the current attachments can't be sent (empty = fine)
-        self.host_runner = Runner(root, lambda t: self.write(self.host_log, t), self.host_finished)
+        self.host_runner = Runner(root, lambda t: self.output_text(self.host_log, self.host_runner, t),
+                                  self.host_finished)
 
         self.show_mode()
         self.update_preview()
@@ -186,6 +193,13 @@ class IdleApp:
                         command=self.show_mode).pack(side="left")
         self.host_status = ttk.Label(top, text="", foreground="gray")
         self.host_status.pack(side="right")
+        bar = ttk.Frame(self.root, padding=(10, 4, 10, 0))
+        bar.pack(fill="x")
+        self.credits_label = ttk.Label(bar, text="")
+        self.credits_label.pack(side="left")
+        ttk.Label(bar, text="   resets each launch · tracker only",
+                  foreground="gray").pack(side="left")
+        self.refresh_credits()
 
         shared = ttk.LabelFrame(self.root, text="Settings (used by both modes)", padding=8)
         shared.pack(fill="x", padx=10, pady=8)
@@ -204,6 +218,7 @@ class IdleApp:
         text.configure(yscrollcommand=bar.set)
         text.tag_configure("cmd", foreground="#1a6fd6")
         text.tag_configure("model", foreground="#8a2be2")
+        text.tag_configure("credits", foreground="#1b7f3b")
         bar.pack(side="right", fill="y")
         text.pack(side="left", fill="both", expand=True)
         return text
@@ -299,18 +314,42 @@ class IdleApp:
         log.configure(state="normal")
         start = log.index("end-1c linestart")
         log.insert("end", text, tag)
-        # Debug: colour every line that says which model ran.
-        index = start
-        while True:
-            index = log.search("[model]", index, stopindex="end")
-            if not index:
-                break
-            log.tag_add("model", f"{index} linestart", f"{index} lineend")
-            index = f"{index} lineend"
+        # Colour every line that says which model ran, and every credits line.
+        for marker, line_tag in (("[model]", "model"), ("[credits]", "credits")):
+            index = start
+            while True:
+                index = log.search(marker, index, stopindex="end")
+                if not index:
+                    break
+                log.tag_add(line_tag, f"{index} linestart", f"{index} lineend")
+                index = f"{index} lineend"
         log.see("end")
         log.configure(state="disabled")
         if log is getattr(self, "ask_log", None):
             self.update_model_debug()
+
+    # ----- credits ---------------------------------------------------------
+    def output_text(self, log: tk.Text, runner: "Runner", text: str) -> None:
+        self.write(log, text)
+        self.scan_credits(runner)
+
+    def scan_credits(self, runner: "Runner") -> None:
+        """Add up the '[credits] earned/spent X credits' lines the commands print."""
+        end = runner.output.rfind("\n") + 1  # only look at complete lines
+        for line in runner.output[runner.credit_pos:end].splitlines():
+            if m := re.search(r"\[credits\] (earned|spent) ([\d.]+) credits", line):
+                if m.group(1) == "earned":
+                    self.earned += float(m.group(2))
+                else:
+                    self.spent += float(m.group(2))
+                self.refresh_credits()
+        runner.credit_pos = max(runner.credit_pos, end)
+
+    def refresh_credits(self) -> None:
+        balance = self.earned - self.spent
+        self.credits_label.configure(
+            text=f"Credits: {balance:+.3f}   (earned {self.earned:.3f} · spent {self.spent:.3f})",
+            foreground="#1b7f3b" if balance >= 0 else "#b00020")
 
     def update_model_debug(self) -> None:
         """Debug bar: which model ran each step of the current prompt, read from the [model] log lines."""

@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from peer import attachments, ollama, prompts
+from peer import attachments, credits, ollama, prompts
 from peer.attachments import Attachments
 from peer.chat import PeerClient
 from peer.config import (COORDINATOR_MODEL, DEFAULT_MODEL, KNOWN_PEERS_FILE, MODELS, PEER_PORT,
@@ -42,9 +42,10 @@ class Device:
     def run(self, model: str, messages: list[dict]) -> str:
         raise NotImplementedError
 
-    def run_reported(self, model: str, messages: list[dict]) -> tuple[str, str]:
-        """Run, and also return the model that actually answered."""
-        return self.run(model, messages), model
+    def run_reported(self, model: str, messages: list[dict]) -> tuple[str, str, dict | None]:
+        """Run, and also return the model that actually answered and the usage to pay for
+        (None = free: work on this laptop costs nothing)."""
+        return self.run(model, messages), model, None
 
 
 class LocalDevice(Device):
@@ -71,14 +72,16 @@ class RemoteDevice(Device):
     def run(self, model: str, messages: list[dict]) -> str:
         return self.run_reported(model, messages)[0]
 
-    def run_reported(self, model: str, messages: list[dict]) -> tuple[str, str]:
-        text, used = "", "?"
+    def run_reported(self, model: str, messages: list[dict]) -> tuple[str, str, dict | None]:
+        text, used, usage = "", "?", None
         for piece in self.client.chat(model, messages):
             if isinstance(piece, dict):
                 used = piece.get("model", "?")  # the helper says which model it ran
+                # ...and how much work it was (older helpers only send the time)
+                usage = piece.get("usage") or {"seconds": piece.get("seconds", 0)}
             else:
                 text += piece
-        return text, used
+        return text, used, usage
 
 
 def load_known_peers() -> list[tuple[str, int]]:
@@ -204,6 +207,8 @@ class PartResult:
     text: str = ""
     seconds: float = 0.0
     model: str = ""                 # the model that actually answered (reported by the helper)
+    credits: float = 0.0            # what this part cost (0 if this laptop did it)
+    credit_detail: str = ""
     notes: list[str] = field(default_factory=list)
 
 
@@ -216,15 +221,17 @@ def run_part(index: int, instruction: str, device: Device, fallback: LocalDevice
     result = PartResult(index, instruction, device.name)
     start = time.time()
     try:
-        text, result.model = device.run_reported(model, messages)
+        text, result.model, usage = device.run_reported(model, messages)
     except Exception as e:  # device died, Wi-Fi dropped, Ollama error...
         if device is fallback:
             raise
         log(f"  part {index + 1}: '{device.name}' failed ({e}); redoing it on this laptop")
         result.notes.append(f"'{device.name}' failed: {e}")
         result.device = fallback.name
-        text, result.model = fallback.run_reported(model, messages)
+        text, result.model, usage = fallback.run_reported(model, messages)
     result.text = text.strip()
+    if usage is not None:
+        result.credits, result.credit_detail = credits.credits_for(usage)
     result.seconds = round(time.time() - start, 1)
     return result
 
@@ -252,7 +259,8 @@ def save(task: str, model: str, workers: list[Device], parts: list[PartResult],
         f"**Total time:** {total_seconds}s", "", "## Final answer", "", final, "", "## Parts", "",
     ]
     for p in parts:
-        lines += [f"### Part {p.index + 1} — {p.device}, {p.model} ({p.seconds}s)", "", f"*{p.instruction}*", ""]
+        cost = f", {p.credits:.3f} credits" if p.credit_detail else ""
+        lines += [f"### Part {p.index + 1} — {p.device}, {p.model} ({p.seconds}s{cost})", "", f"*{p.instruction}*", ""]
         lines += [f"> note: {n}" for n in p.notes] + ([""] if p.notes else [])
         lines += [p.text, ""]
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -344,6 +352,8 @@ def main() -> None:
             r = f.result()
             parts.append(r)
             log(f"  part {r.index + 1} done by {r.device} in {r.seconds}s [model] {r.model}")
+            if r.credit_detail:
+                log("  " + credits.line("spent", r.credits, f"{r.credit_detail} on {r.device}"))
             if r.model != args.model:
                 log(f"  WARNING: part {r.index + 1} was answered by {r.model}, not {args.model}")
     parts.sort(key=lambda p: p.index)
@@ -367,6 +377,8 @@ def main() -> None:
     print("\n" + "=" * 70 + "\n## Final answer\n")
     print(final)
     print("\n" + "=" * 70)
+    spent = sum(p.credits for p in parts)
+    log(f"Credits for this prompt: {spent:.3f} spent on helpers (work on this laptop is free)")
     log(f"Done in {total_secs}s using {len(workers)} laptop(s). Saved to {path}")
 
 

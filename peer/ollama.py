@@ -99,12 +99,14 @@ def ensure_model(model: str, log) -> bool:
 
 
 def chat_stream(model: str, messages: list[dict], json_format: bool | dict = False,
-                options: dict | None = None):
+                options: dict | None = None, usage: dict | None = None):
     """Yield pieces of the reply as Ollama generates them.
 
     json_format=True forces valid JSON; a dict is a JSON schema the reply must follow.
     options are Ollama model settings, e.g. {"temperature": 0, "num_predict": 300}
     (num_predict = the most tokens the model may write).
+    If a `usage` dict is given, it's filled in at the end with input_tokens, output_tokens
+    and seconds (as reported by Ollama; a missing count stays None).
     """
     if model not in MODEL_ALLOWLIST:
         raise ValueError(f"model {model!r} is not allowed")
@@ -127,6 +129,10 @@ def chat_stream(model: str, messages: list[dict], json_format: bool | dict = Fal
                 raise RuntimeError(part["error"])
             yield part.get("message", {}).get("content", "")
             if part.get("done"):
+                if usage is not None:
+                    usage.update(input_tokens=part.get("prompt_eval_count"),
+                                 output_tokens=part.get("eval_count"),
+                                 seconds=round((part.get("total_duration") or 0) / 1e9, 2) or None)
                 return
 
 

@@ -19,6 +19,7 @@ from peer.config import MAX_IMAGE_BYTES, MAX_IMAGES, MODEL_ALLOWLIST, MODELS, PE
 from peer.discovery import local_ip, start_responder
 from peer.ollama import chat_stream, installed_models, pull, supports_images, warm_up
 from peer.room import resolve_room, start_announcer
+from peer import credits
 
 ALLOWED_ROLES = {"system", "user", "assistant"}
 MAX_MESSAGES = 100
@@ -176,14 +177,20 @@ class PeerHandler(BaseHTTPRequestHandler):
         self.end_headers()
         start = time.time()
         chars = 0
-        gen = stream_fake if self.fake else chat_stream
+        usage: dict = {}
+        pieces = stream_fake(model, messages) if self.fake else chat_stream(model, messages, usage=usage)
         try:
-            for piece in gen(model, messages):
+            for piece in pieces:
                 chars += len(piece)
                 self.write_line({"token": piece})
             secs = round(time.time() - start, 1)
-            self.write_line({"done": True, "seconds": secs, "node": self.node_name, "model": model})
+            if usage.get("seconds") is None:  # fake model, or Ollama didn't say
+                usage["seconds"] = secs
+            earned, detail = credits.credits_for(usage)
+            self.write_line({"done": True, "seconds": secs, "node": self.node_name, "model": model,
+                             "usage": usage})
             log(f"{who} <- reply done ({chars} chars, {secs}s)")
+            log(credits.line("earned", earned, f"{detail} for {who}"))
         except (BrokenPipeError, ConnectionResetError):
             log(f"{who} disconnected mid-reply")
         except Exception as e:  # Ollama down, model missing, etc.

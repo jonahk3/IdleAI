@@ -57,3 +57,8 @@ ROOM_ANNOUNCE_EVERY = 60 * 60   # re-post our address at least this often (secon
 # The most tokens the planner may write. A plan is a few short instructions; this stops
 # the planner from spending a long time working out the answer itself.
 PLANNER_MAX_TOKENS = 800
+
+# Credits (a tracker only for now: balances can go negative and nothing is blocked).
+# Answering a teammate's request EARNS credits; having a teammate answer yours SPENDS them.
+CREDITS_PER_1000_TOKENS = 1.0   # tokens = what the model read (input) + what it wrote (output)
+CREDITS_PER_MINUTE = 3.0        # used instead when a model doesn't report token counts

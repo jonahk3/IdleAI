@@ -78,6 +78,20 @@ download fails. The list lives in `peer/config.py` (`MODELS`).
   use what the helpers wrote.
 - Answers are still text only.
 
+## Credits
+
+A simple tracker for now (later it will be tied to an account):
+- **Hosting earns** credits for every request your laptop answers for a teammate.
+- **Asking spends** credits for every part a teammate's laptop answers for you. Work done on your
+  own laptop (planning, combining, your own part) is free.
+- The amount is based on **tokens** (what the model read + wrote, reported by Ollama):
+  1 credit per 1,000 tokens. If a model doesn't report tokens, **compute time** is used instead:
+  3 credits per minute. Both rates are in `peer/config.py`; the maths is in `peer/credits.py`,
+  which host and asker share, so both sides always agree on the amount.
+- The tools print `[credits] earned/spent ...` lines (green in the GUI). The GUI adds them up
+  under the top bar. It **starts at 0 every time the GUI opens**, can go negative, and doesn't
+  block anything.
+
 ## 1. One-time setup (on EVERY laptop)
 
 1. **Install Python 3.11 or newer** from <https://www.python.org/downloads/>.
@@ -254,6 +268,7 @@ You can also test everything on one laptop. Run the server in one terminal and
 | `peer/split.py` | Splits one prompt into parts, runs them on all laptops at once, then collects and saves the answers |
 | `peer/gui.py` | The window: builds and runs the commands below for you, remembers settings |
 | `peer/attachments.py` | Reads attached files and images and adds them to messages |
+| `peer/credits.py` | How many credits a piece of work costs/earns (tokens, or compute time) |
 | `peer/room.py` | Rooms: posts/reads laptop addresses on ntfy.sh so peers find each other |
 | `peer/discovery.py` | Finds other laptops on the Wi-Fi (UDP broadcast on port 8766) |
 | `peer/ollama.py` | Talks to the Ollama on this laptop |

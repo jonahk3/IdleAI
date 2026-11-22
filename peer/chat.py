@@ -13,7 +13,7 @@ import json
 import urllib.error
 import urllib.request
 
-from peer import attachments
+from peer import attachments, credits
 from peer.config import DEFAULT_MODEL, MODELS, OLLAMA_TIMEOUT, PEER_PORT
 
 
@@ -109,6 +109,8 @@ def main() -> None:
             for piece in client.chat(model, [attachments.user_message(args.prompt, att)]):
                 if isinstance(piece, dict):
                     print(f"\n   ({piece['seconds']}s on {piece['node']}, [model] {piece.get('model', '?')})")
+                    spent, detail = credits.credits_for(piece.get("usage") or {"seconds": piece.get("seconds", 0)})
+                    print("   " + credits.line("spent", spent, f"{detail} on {piece['node']}"))
                 else:
                     print(piece, end="", flush=True)
         except (RuntimeError, urllib.error.URLError, OSError) as e:
@@ -146,7 +148,9 @@ def main() -> None:
         try:
             for piece in client.chat(model, history):
                 if isinstance(piece, dict):
-                    print(f"\n   ({piece['seconds']}s on {piece['node']}, [model] {piece.get('model', '?')})\n")
+                    print(f"\n   ({piece['seconds']}s on {piece['node']}, [model] {piece.get('model', '?')})")
+                    spent, detail = credits.credits_for(piece.get("usage") or {"seconds": piece.get("seconds", 0)})
+                    print("   " + credits.line("spent", spent, f"{detail} on {piece['node']}") + "\n")
                 else:
                     reply += piece
                     print(piece, end="", flush=True)
