@@ -41,13 +41,17 @@ It runs exactly the same commands as the simple window, so everything in this RE
   shows which devices and models did the work, and the full log.
   **Start hosting** shares this device's AI with your grid; **Server window** pops out its log,
   which shows each task as it arrives and when it's finished and sent back.
-- **Grid**: the devices on your grid, extra IPs, *Find devices*, and *Check a device*.
 - **Your CO2 use**: how much CO2 this device emits per hour while running a model (from its
   location), how that compares with the cleanest and dirtiest provinces, and this session's totals.
 - **Chat history**: every past prompt and its answer.
 - **Settings**: your name, grid name (`general` by default; *New private grid* makes one for your
-  team), device location, and the models to download and share. If you're hosting, hosting
-  restarts by itself to use new settings.
+  team), device location, the models to download and share, and *Merge with AI*. *Advanced* has
+  extra IPs and Wi-Fi search. If you're hosting, hosting restarts by itself to use new settings.
+
+**How answers are put together:** by default each helper's answer is shown under its own heading
+(e.g. the file it rated), instantly and exactly as written. *Merge with AI* (or `peer.split
+--ai-merge`) has this device's model rewrite them into one text instead; that's slower and a small
+model can mix answers up.
 - The header shows your **credits** (this session), whether you're hosting, and whether Ollama runs.
 
 ## Simple window (no install)
@@ -229,8 +233,8 @@ What happens (the prompts for each step are in `peer/prompts.py`):
    It only uses as many devices as make sense: a short task gets one.
 3. **Run**: all parts are sent out at once. Helpers only see their own instruction. If a device
    dies, yours redoes its part.
-4. **Combine**: the coordinator model writes the final answer from the helpers' answers (fixing numbering,
-   duplicates and gaps).
+4. **Combine**: the helpers' answers are joined in order, each under its own heading (or, with
+   `--ai-merge`, the coordinator model rewrites them into one answer).
 
 The final answer is shown and saved, chat-style (your prompt + the answer), to `results/<date-time>.md`.
 

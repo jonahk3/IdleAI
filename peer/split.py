@@ -301,6 +301,21 @@ def combine(local: LocalDevice, model: str, task: str, parts: list[PartResult], 
     return ollama.trim_repetition(local.run(model, messages, options={"temperature": 0, "num_predict": COMBINE_MAX_TOKENS}))
 
 
+def part_label(instruction: str, file_names: list[str]) -> str:
+    """A short heading for one helper's answer: the file(s) it worked on, else its instruction."""
+    named = [n for n in file_names if n.lower() in instruction.lower()]
+    if named:
+        return ", ".join(named)
+    text = instruction.strip().rstrip(".")
+    return text if len(text) <= 80 else text[:77] + "..."
+
+
+def join_answers(parts: list[PartResult], att: Attachments) -> str:
+    """The final answer without a merge model: each helper's answer under its own heading, in order."""
+    names = [name for name, _ in att.texts] + att.image_names
+    return "\n\n".join(f"**{part_label(p.instruction, names)}**\n\n{p.text}" for p in parts if p.text)
+
+
 def save(task: str, final: str, attached: list[str]) -> Path:
     """Save the conversation like a chat: your prompt and the final answer only."""
     out_dir = Path(RESULTS_DIR)
@@ -320,6 +335,8 @@ def main() -> None:
     parser.add_argument("prompt", nargs="?", help="what to ask (you'll be asked if you leave it out)")
     parser.add_argument("--model", default=DEFAULT_MODEL, choices=list(MODELS),
                         help="the model the helpers run for each part")
+    parser.add_argument("--ai-merge", action="store_true",
+                        help="have the coordinator model rewrite the parts into one answer (slower)")
     parser.add_argument("--coordinator", default=COORDINATOR_MODEL, choices=list(MODELS),
                         help="the model this device uses to plan and combine (default: %(default)s)")
     parser.add_argument("--location", type=str.upper, choices=list(carbon.provinces()),
@@ -410,18 +427,24 @@ def main() -> None:
                 log(f"  WARNING: part {r.index + 1} was answered by {r.model}, not {args.model}")
     parts.sort(key=lambda p: p.index)
 
-    if len(parts) > 1:
+    if len(parts) > 1 and args.ai_merge:
         log("COMBINE: this device is writing the final answer from the helpers' answers...")
         log(f"  [model] combine on this device: {coordinator}")
         combine_start = time.time()
         try:
             final = combine(local, coordinator, prompt, parts, att)
         except Exception as e:  # Ollama error, timeout...: still give the user the helpers' answers
-            log(f"  merging failed ({e}); showing the helpers' answers one after another instead")
+            log(f"  merging failed ({e}); joining the helpers' answers instead")
             final = ""
         if not final:
-            final = "\n\n".join(p.text for p in parts if p.text)
+            final = join_answers(parts, att)
         log(f"  combined in {time.time() - combine_start:.1f}s")
+    elif len(parts) > 1:
+        # Default: join in code. Instant, and nothing is changed or added (a small model merging
+        # long answers is slow and can mix them up).
+        log("COMBINE: joining the helpers' answers in order (instant, no AI needed)")
+        final = join_answers(parts, att)
+        log("  combined in 0.0s")
     else:
         final = parts[0].text
 

@@ -94,7 +94,9 @@ def planner_user(task: str, parts: int, attached: list[str] | None = None) -> st
 
 
 # ---------------------------------------------------------------- 2. run (each helper)
-WORKER_SYSTEM = "You are a helper. Do exactly what the instruction asks, nothing more. Reply with only the answer."
+WORKER_SYSTEM = ("You are a helper. Do exactly what the instruction asks, nothing more. Reply with only the answer. "
+                 "Answer directly: never say what you can't do, never ask follow-up questions, and don't "
+                 "mention other files or helpers.")
 
 
 # ---------------------------------------------------------------- 3. combine

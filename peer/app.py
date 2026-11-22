@@ -157,7 +157,6 @@ def index() -> None:
             ui.label("model computing software").classes("idle-caption leading-none")
         with ui.tabs().classes("ml-6") as tabs:
             t_ask = ui.tab("Ask", icon="chat_bubble_outline")
-            t_net = ui.tab("Grid", icon="hub")
             t_co2 = ui.tab("Your CO2 use", icon="eco")
             t_hist = ui.tab("Chat history", icon="history")
             t_set = ui.tab("Settings", icon="settings")
@@ -227,28 +226,6 @@ def index() -> None:
                     send_button = ui.button(icon="arrow_upward", on_click=lambda: send()
                                             ).props("round unelevated color=dark").tooltip("Send")
 
-        # ================================================================ GRID
-        with ui.tab_panel(t_net).classes("gap-4"):
-            with ui.row().classes("w-full items-center gap-2"):
-                ui.label("Your grid:").classes("idle-caption")
-                grid_label = ui.label().classes("idle-title text-lg")
-                ui.label("(change it in Settings)").classes("text-xs opacity-60")
-            with ui.row().classes("w-full gap-4 items-stretch no-wrap"):
-                with ui.card().classes("idle-card w-1/2"):
-                    ui.label("Devices on your grid").classes("idle-caption")
-                    ui.input("Extra IPs (if a device isn't on the grid)", value=s["extra_peers"],
-                             on_change=lambda e: save("extra_peers", e.value)).classes("w-full").props("outlined dense")
-                    ui.switch("Also search the Wi-Fi", value=s["search_wifi"], on_change=lambda e: save("search_wifi", e.value))
-                    ui.button("Find devices", icon="search", on_click=lambda: find_devices()).props("unelevated no-caps color=dark")
-                    peers_box = ui.column().classes("w-full gap-1")
-                with ui.card().classes("idle-card w-1/2"):
-                    ui.label("Check a device").classes("idle-caption")
-                    with ui.row().classes("w-full items-center no-wrap"):
-                        check_input = ui.input(placeholder="10.122.27.108 or 10.122.27.108:8770").classes("grow").props("outlined dense")
-                        ui.button("Check", on_click=lambda: check_device()).props("outline no-caps")
-                    check_output = ui.code("", language="text").classes("w-full text-xs")
-                    status_line = ui.label().classes("text-sm opacity-70")
-
         # ================================================================ YOUR CO2 USE
         with ui.tab_panel(t_co2).classes("gap-4"):
             with ui.row().classes("w-full gap-4 items-stretch no-wrap"):
@@ -316,6 +293,16 @@ def index() -> None:
                                     on_change=lambda e, m=m: toggle_host_model(m, e.value))
                 ui.label("You choose what this device downloads. The person asking chooses which model runs "
                          "(missing ones download automatically).").classes("text-xs opacity-60")
+                ui.label("Answers").classes("idle-caption mt-2")
+                ui.switch("Merge with AI (slower): rewrite the helpers' answers into one text",
+                          value=s["ai_merge"], on_change=lambda e: save("ai_merge", e.value))
+                ui.label("Off (recommended): each helper's answer is shown under its own heading, instantly and "
+                         "exactly as written.").classes("text-xs opacity-60")
+                with ui.expansion("Advanced", icon="tune").classes("w-full mt-2"):
+                    ui.input("Extra IPs (devices that aren't found on the grid automatically)", value=s["extra_peers"],
+                             on_change=lambda e: save("extra_peers", e.value)).classes("w-full").props("outlined dense")
+                    ui.switch("Also search the Wi-Fi", value=s["search_wifi"], on_change=lambda e: save("search_wifi", e.value))
+                    status_line = ui.label().classes("text-sm opacity-70")
 
         # ================================================================ CHAT HISTORY
         with ui.tab_panel(t_hist).classes("gap-4"):
@@ -494,33 +481,6 @@ def index() -> None:
             changed("room", name)
             ui.notify(f"Now on grid '{name}'")
 
-    async def find_devices() -> None:
-        n = ui.notification("Looking for devices…", spinner=True, timeout=None)
-        result = await run.io_bound(bridge.find_peers, load_settings())
-        n.dismiss()
-        peers = result["peers"]
-        peers_box.clear()
-        with peers_box:
-            if not peers:
-                ui.label("No other devices found. Check the grid name, or add their IP above.").classes("text-sm opacity-60")
-            for p in peers:
-                g = carbon.intensity(p.get("location")) if p.get("location") else None
-                with ui.row().classes("w-full items-center no-wrap gap-2 idle-soft px-3 py-1"):
-                    ui.icon("laptop_mac").classes("opacity-70")
-                    ui.label(p["name"]).classes("font-semibold")
-                    ui.label(p["address"]).classes("text-xs opacity-60")
-                    ui.space()
-                    ui.badge(carbon.label(p.get("location")), color=grid_colour(g))
-        ui.notify(f"Found {len(peers)} other device(s)")
-
-    async def check_device() -> None:
-        if not (check_input.value or "").strip():
-            ui.notify("Type the device's IP first", type="warning")
-            return
-        check_output.set_content("Checking…")
-        result = await run.io_bound(bridge.check, check_input.value.strip())
-        check_output.set_content(result["log"].split("\n", 1)[-1].strip())
-
     # ---------------------------------------------------------------- history
     def show_result(file: Path) -> None:
         you, attached, answer = parse_result(file.read_text(encoding="utf-8"))
@@ -608,7 +568,6 @@ def index() -> None:
         # host
         host_running = state["hosting"]["running"]
         server_state.set_text("● Hosting" if host_running else "○ Not hosting")
-        grid_label.set_text(state["settings"]["room"])
         loc = state["settings"]["location"]
         co2_where.set_text(f"Location: {carbon.label(loc)} (change it in Settings)" if loc else
                            "Location not set: set it in Settings")

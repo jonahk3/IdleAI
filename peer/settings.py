@@ -16,7 +16,8 @@ DEFAULTS = {
     "host_name": socket.gethostname(),
     "search_wifi": True,
     "extra_peers": "",
-    "location": "",             # province code (fake for now), used for carbon-aware routing
+    "location": "",
+    "ai_merge": False,          # rewrite the helpers' answers with the AI (slower) instead of joining them             # province code (fake for now), used for carbon-aware routing
     "host_models": [DEFAULT_MODEL],  # models to download and share while hosting
 }
 

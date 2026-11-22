@@ -83,7 +83,7 @@ UI_URL = os.environ.get("IDLE_UI_URL", "https://idle-ui.lovable.app")
 # Safety settings for every normal answer, so small models don't loop or ramble forever
 # (Ollama stops a looping model with "token repeat limit reached").
 ANSWER_OPTIONS = {"repeat_penalty": 1.15, "repeat_last_n": 256, "num_predict": 1200}
-COMBINE_MAX_TOKENS = 1500       # the merge step's answer is capped too
+COMBINE_MAX_TOKENS = 700        # the AI merge step's answer is capped too (shorter = faster)
 
 # How much text a model can read at once (its "context", in tokens). Ollama's default is small
 # (about 4k), and anything over it is silently cut off, so the size is worked out for each

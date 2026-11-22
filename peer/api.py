@@ -242,6 +242,8 @@ class Bridge:
         # routing picks which ones.
         files = self.file_paths()
         cmd = self.base("peer.split") + [prompt, "--model", s["model"]] + self.common(s) + self.peer_args(s)
+        if s.get("ai_merge"):
+            cmd.append("--ai-merge")
         return cmd + (["--file", *files] if files else [])
 
     def host_command(self, s: dict) -> list[str]:
