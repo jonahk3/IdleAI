@@ -67,3 +67,13 @@ CREDITS_PER_MINUTE = 3.0        # used instead when a model doesn't report token
 # Locations are fake for now (each laptop picks one); data is in peer/provinces.json.
 UNKNOWN_G_CO2_PER_KWH = 1000    # a laptop with no location is treated as the dirtiest
 LAPTOP_WATTS = 30               # rough power draw while running a model (for CO2 estimates)
+
+# Web app (Lovable UI) + local bridge (python -m peer.api).
+API_PORT = 8800
+# Web addresses allowed to use the bridge: Lovable-hosted apps and pages on this laptop.
+API_ALLOWED_ORIGINS = os.environ.get(
+    "IDLE_UI_ORIGINS",
+    r"^(https://[a-z0-9-]+\.(lovable\.app|lovableproject\.com|lovable\.dev)|http://(localhost|127\.0\.0\.1)(:\d+)?)$",
+)
+# Where the web app is published (the bridge prints a link to it). Set after publishing.
+UI_URL = os.environ.get("IDLE_UI_URL", "https://idle-ui.lovable.app")
