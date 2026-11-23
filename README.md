@@ -9,6 +9,8 @@ answer. Hosting earns credits, asking spends them, and Idle shows the CO2 your A
 
 No cloud and no API keys: every model runs on your team's own devices.
 
+Running compute on non-local roadmaps is on the roadmap.
+
 <p align="center"><img src="docs/chat.png" alt="The Idle app: a chat with a reply put together from two devices" width="860"></p>
 
 ## Features
